@@ -120,8 +120,13 @@ type Result struct {
 	Terse string
 }
 
-// Emit renders a successful result per the configured format.
+// Emit renders a successful result per the configured format. An empty body
+// (e.g. HTTP 204) is normalized to nil so the JSON path emits `data:null`
+// rather than failing to marshal an empty RawMessage.
 func (w *Writer) Emit(r *Result) error {
+	if len(r.Data) == 0 {
+		r.Data = nil
+	}
 	switch w.Format {
 	case FormatRaw:
 		return w.writeRaw(r.Data)
@@ -209,6 +214,10 @@ func (w *Writer) writeCompactLine(raw json.RawMessage) error {
 func (w *Writer) writeTerse(r *Result) error {
 	if r.Terse != "" {
 		_, err := fmt.Fprintln(w.Out, r.Terse)
+		return err
+	}
+	if len(r.Data) == 0 {
+		_, err := fmt.Fprintln(w.Out, "ok")
 		return err
 	}
 	// Fallback: compact single-line JSON.

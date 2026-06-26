@@ -86,3 +86,15 @@ func TestLiveReads(t *testing.T) {
 func TestLiveSearchByID(t *testing.T) {
 	assertOK(t, "search", "id", "--id-type", "imdb", "--id", "tt0468569")
 }
+
+// TestLive204 covers the empty-body path: an ended show has no next episode, so
+// Trakt returns 204 — which must surface as ok:true / data:null, not an error.
+func TestLive204(t *testing.T) {
+	env := run(t, "show", "next-episode", "--id", "breaking-bad")
+	if ok, _ := env["ok"].(bool); !ok {
+		t.Fatalf("204 path: expected ok:true, got %v", env["error"])
+	}
+	if env["data"] != nil {
+		t.Errorf("204 path: expected data:null, got %v", env["data"])
+	}
+}

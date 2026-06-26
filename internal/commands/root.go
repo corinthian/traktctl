@@ -18,6 +18,7 @@ func NewRoot() (*cobra.Command, *App) {
 	root := &cobra.Command{
 		Use:           "traktctl",
 		Short:         "JSON-first CLI wrapper over the Trakt API",
+		Version:       Version,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		// Resolve config/client once flags are parsed, and honor --llm before

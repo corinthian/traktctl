@@ -1,0 +1,96 @@
+package commands
+
+import (
+	"encoding/json"
+	"strings"
+
+	"github.com/rlarsen/traktctl/internal/output"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+)
+
+// llmHelp is the machine-readable per-command help object emitted by --llm.
+type llmHelp struct {
+	Command      string     `json:"command"`
+	Usage        string     `json:"usage"`
+	Summary      string     `json:"summary"`
+	Args         []string   `json:"args"`
+	Flags        []llmFlag  `json:"flags"`
+	Examples     []string   `json:"examples"`
+	OutputSchema string     `json:"output_schema,omitempty"`
+	Subcommands  []llmChild `json:"subcommands,omitempty"`
+}
+
+type llmFlag struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Default string `json:"default,omitempty"`
+	Usage   string `json:"usage"`
+}
+
+type llmChild struct {
+	Name    string `json:"name"`
+	Summary string `json:"summary"`
+}
+
+// emitLLMHelp prints the JSON help object for cmd and is the --llm handler.
+// Endpoint/examples/output_schema come from cmd.Annotations when a group sets
+// them; everything else is derived from the cobra command.
+func emitLLMHelp(cmd *cobra.Command, out *output.Writer) {
+	h := llmHelp{
+		Command: cmd.CommandPath(),
+		Usage:   cmd.UseLine(),
+		Summary: cmd.Short,
+	}
+	if cmd.Args != nil || len(cmd.ValidArgs) > 0 {
+		h.Args = cmd.ValidArgs
+	}
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		h.Flags = append(h.Flags, llmFlag{
+			Name: f.Name, Type: f.Value.Type(), Default: f.DefValue, Usage: f.Usage,
+		})
+	})
+	if ex := cmd.Annotations["examples"]; ex != "" {
+		h.Examples = strings.Split(ex, "\n")
+	}
+	h.OutputSchema = cmd.Annotations["output_schema"]
+	for _, c := range cmd.Commands() {
+		if c.Hidden || c.Name() == "help" {
+			continue
+		}
+		h.Subcommands = append(h.Subcommands, llmChild{Name: c.Name(), Summary: c.Short})
+	}
+	data, _ := json.MarshalIndent(h, "", "  ")
+	out.Out.Write(append(data, '\n'))
+}
+
+// commandNode is a node in the `traktctl commands` JSON tree.
+type commandNode struct {
+	Name        string        `json:"name"`
+	Path        string        `json:"path"`
+	Summary     string        `json:"summary"`
+	Subcommands []commandNode `json:"subcommands,omitempty"`
+}
+
+func buildCommandTree(root *cobra.Command) commandNode {
+	return nodeFor(root)
+}
+
+func nodeFor(cmd *cobra.Command) commandNode {
+	n := commandNode{Name: cmd.Name(), Path: cmd.CommandPath(), Summary: cmd.Short}
+	for _, c := range cmd.Commands() {
+		if c.Hidden || c.Name() == "help" || c.Name() == "completion" {
+			continue
+		}
+		n.Subcommands = append(n.Subcommands, nodeFor(c))
+	}
+	return n
+}
+
+func jsonRaw(v interface{}) (json.RawMessage, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(b), nil
+}

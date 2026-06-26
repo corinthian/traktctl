@@ -5,6 +5,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -105,6 +106,51 @@ func resolveConfigPath(explicit string) string {
 		}
 	}
 	return ""
+}
+
+// FileConfig is the on-disk config.toml shape written by `config init`. Only
+// non-empty fields are serialized, so an env-held secret can be kept out.
+type FileConfig struct {
+	ClientID     string `toml:"client_id"`
+	ClientSecret string `toml:"client_secret,omitempty"`
+	DefaultUser  string `toml:"default_user,omitempty"`
+	BaseURL      string `toml:"base_url,omitempty"`
+	Extended     string `toml:"extended,omitempty"`
+}
+
+// DefaultConfigPath returns ~/.config/traktctl/config.toml (does not create it).
+func DefaultConfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "traktctl", "config.toml"), nil
+}
+
+// ResolvedConfigPath returns the path Load would read for the given explicit
+// --config value, or "" if none exists (used by `config path`).
+func ResolvedConfigPath(explicit string) string {
+	return resolveConfigPath(explicit)
+}
+
+// WriteConfigFile writes fc to path (0600), creating parent dirs. It refuses to
+// overwrite an existing file unless force is set.
+func WriteConfigFile(path string, fc FileConfig, force bool) error {
+	if !force {
+		if _, err := os.Stat(path); err == nil {
+			return fmt.Errorf("config already exists at %s (use --force to overwrite)", path)
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	b, err := toml.Marshal(fc)
+	if err != nil {
+		return err
+	}
+	header := "# traktctl configuration — written by `traktctl config init`\n" +
+		"# Holds client_secret in plaintext; keep private (mode 0600).\n\n"
+	return os.WriteFile(path, append([]byte(header), b...), 0o600)
 }
 
 // ConfigDir returns ~/.config/traktctl, creating it if needed.

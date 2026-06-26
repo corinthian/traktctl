@@ -1,11 +1,16 @@
 package commands
 
 import (
+	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/rlarsen/traktctl/internal/output"
 	"github.com/spf13/cobra"
 )
+
+// itoa is a local shorthand for building numeric path segments.
+func itoa(n int) string { return strconv.Itoa(n) }
 
 // requireID returns the global --id value or a user error if empty.
 func (a *App) requireID() (string, error) {
@@ -146,6 +151,68 @@ func (a *App) postCmd(use, short, path string, confirmRequired bool) *cobra.Comm
 			return a.emit(res, "")
 		},
 	}
+	c.Flags().StringVar(&payload, "payload", "", "request body as JSON")
+	return c
+}
+
+// putCmd builds a mutating PUT command taking a --payload JSON body. Always
+// confirm-gated (PUT here means replace settings/state).
+func (a *App) putCmd(use, short, path string, confirmRequired bool) *cobra.Command {
+	var payload string
+	c := &cobra.Command{
+		Use:   use,
+		Short: short,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if confirmRequired && !a.confirmed() {
+				return output.NewError(output.CodeBadConfig,
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+			}
+			body, err := parsePayload(payload)
+			if err != nil {
+				return err
+			}
+			opts := a.baseOpts(true)
+			opts.Body = body
+			res, cerr := a.Client.Do(a.ctx(), http.MethodPut, path, opts)
+			if cerr != nil {
+				return cerr
+			}
+			return a.emit(res, "")
+		},
+	}
+	c.Flags().StringVar(&payload, "payload", "", "request body as JSON")
+	return c
+}
+
+// putItemCmd builds `<use> --list-item-id ID --payload JSON`: PUT
+// <prefix>/{list_item_id}. Confirm-gated.
+func (a *App) putItemCmd(use, short, prefix string) *cobra.Command {
+	var payload, itemID string
+	c := &cobra.Command{
+		Use:   use,
+		Short: short,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !a.confirmed() {
+				return output.NewError(output.CodeBadConfig,
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+			}
+			if itemID == "" {
+				return output.NewError(output.CodeBadConfig, "missing required --list-item-id", output.ExitUser)
+			}
+			body, err := parsePayload(payload)
+			if err != nil {
+				return err
+			}
+			opts := a.baseOpts(true)
+			opts.Body = body
+			res, cerr := a.Client.Do(a.ctx(), http.MethodPut, prefix+"/"+itemID, opts)
+			if cerr != nil {
+				return cerr
+			}
+			return a.emit(res, "")
+		},
+	}
+	c.Flags().StringVar(&itemID, "list-item-id", "", "list item id")
 	c.Flags().StringVar(&payload, "payload", "", "request body as JSON")
 	return c
 }

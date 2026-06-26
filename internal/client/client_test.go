@@ -20,7 +20,7 @@ type fakeTokens struct {
 }
 
 func (f *fakeTokens) Bearer() string { return f.bearer }
-func (f *fakeTokens) HasToken() bool  { return f.has }
+func (f *fakeTokens) HasToken() bool { return f.has }
 func (f *fakeTokens) Refresh(context.Context) error {
 	f.refreshed = true
 	f.bearer = "refreshed-token"

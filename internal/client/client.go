@@ -167,9 +167,9 @@ func (c *Client) doAll(ctx context.Context, path string, opts Options) (*Result,
 	for {
 		if !opts.ReallyAll && page-(firstPage(opts))+1 > pageCap {
 			return nil, &output.CLIError{
-				Code: output.CodePaginationRunaway,
+				Code:    output.CodePaginationRunaway,
 				Message: fmt.Sprintf("--all exceeded %d pages; pass --really-all to override", pageCap),
-				Exit: output.ExitUser, Endpoint: path,
+				Exit:    output.ExitUser, Endpoint: path,
 			}
 		}
 		pageOpts := opts

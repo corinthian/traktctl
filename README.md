@@ -28,6 +28,19 @@ default_user  = "corinthian"
 base_url      = "https://api.trakt.tv"
 ```
 
+## Bootstrap from scratch
+
+A fresh machine needs credentials then tokens:
+
+```
+traktctl config init --client-id ID --client-secret SECRET --default-user you
+traktctl auth login
+# or one shot:
+traktctl config init --client-id ID --client-secret SECRET --login
+```
+
+`config init` writes `~/.config/traktctl/config.toml` (`0600`); `--config PATH` targets elsewhere, `--force` overwrites. Omit `--client-secret` to keep it in `TRAKT_CLIENT_SECRET` instead of the file. `traktctl config path` shows where config and tokens are read from.
+
 ## Authentication
 
 ```

@@ -18,6 +18,22 @@ traktctl --version
 
 Per-arch tarballs (`-arm64-`, `-amd64-`) are attached to the same release. To build from source instead, see below.
 
+## Quick start
+
+From zero to authenticated. You need a Trakt application's `client_id`/`client_secret` from [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications).
+
+```
+# 1. Write config + log in, in one shot:
+traktctl config init --client-id ID --client-secret SECRET --default-user you --login
+#    Prints a device code + URL to stderr — open the URL, enter the code, approve.
+
+# 2. Confirm and make your first authenticated call:
+traktctl auth status
+traktctl user watchlist
+```
+
+Already have a `config.toml`? Just `traktctl auth login`. Tokens land in the macOS Keychain; the client refreshes them automatically on a 401. See [Authentication](#authentication) and [Bootstrap from scratch](#bootstrap-from-scratch) for the full lifecycle.
+
 ## Build
 
 ```
@@ -85,6 +101,29 @@ Global flags: `--extended`, `--page/--limit/--all` (`--really-all` to bypass the
 
 Destructive verbs (any `remove`, `auth revoke`, sync `settings`/`reorder`/`update-item`, `playback remove`) require `--confirm` or `TRAKTCTL_CONFIRM=1`. Adds are idempotent and need no confirmation.
 
+## Command surface
+
+Every command is `traktctl <group> <verb> [--flags]`. Run `traktctl <group> --help` for a group's verbs, `traktctl <group> <verb> --llm` for machine-readable help, or `traktctl commands` for the whole tree as JSON. v1 covers 11 groups:
+
+- **auth** — authentication lifecycle: `login`, `logout`, `refresh`, `revoke`, `status`.
+- **config** — local bootstrap: `init` (write `config.toml`), `path` (show config + token-store locations).
+- **search** — `query` (text search; `--q`, `--type`) and `id` (external-id lookup; accepts `trakt|imdb|tmdb|tvdb`, excludes `slug`).
+- **movie** / **show** — the title groups, same shape (show adds episode-aware verbs).
+  - Discovery lists: `trending`, `popular`, `anticipated`, `favorited`, `played`, `watched`, `collected`, `streaming`, `updates`, `updated-ids` (movie also `boxoffice`).
+  - Single title: `get`, `aliases`, `translations`, `people`, `ratings`, `related`, `stats`, `studios`, `videos`, `comments`, `lists`, `sentiments`, `watching` (movie `releases`; show `certifications`).
+  - Show-only: `progress` (watched/collected), `next-episode` (204 if none), `last-episode`.
+- **season** — `summary`, `info`, `episodes`, `people`, `ratings`, `stats`, `translations`, `comments`, `lists`, `videos`, `watching`, `report`.
+- **episode** — `summary`, `comments`, `lists`, `people`, `ratings`, `stats`, `translations`, `videos`, `watching`.
+- **calendar** — upcoming releases; `all-*` are public, `my-*` are your personal calendar: `shows`, `new-shows`, `premieres`, `finales`, `movies`, `dvd`, `streaming` (each in `all-`/`my-` form). Take `--start DATE --days N`.
+- **recommend** — personalized: `movies`, `shows`, plus `hide-movie`/`hide-show` to suppress a title.
+- **sync** — personal data reads + mutations: `activities` (cheap change-poll), `collection`, `watched`, `history`, `ratings`, `watchlist`, `favorites`, `playback`. Reads support `get`; mutating verbs (`add`/`remove`, and `settings`/`reorder`/`update-item` on watchlist/favorites) gate behind `--confirm`.
+- **user** — profile and personal data (44 verbs):
+  - reads: `profile`, `settings`, `stats`, `watchlist`, `watched`, `history`, `ratings`, `collection`, `favorites`, `comments`, `notes`, `likes`, `lists`, `watching`, `hidden`, `saved-filters`.
+  - list management: `list`, `list-items`, `list-create`, `list-delete`, `list-update`, `list-items-add`, `list-items-remove`, `list-items-reorder`, `list-item-update`, `lists-reorder`, `list-like`/`list-unlike`, `list-comments`, `list-report`.
+  - social: `follow`, `followers`, `following`, `friends`, `block`, `blocked`, `collaborations`, `requests-follower`, `requests-following`, `requests-respond`, `report`.
+
+Deferred to v2 (not in the binary yet): `checkin`, `cert`, `comment`, `list`, `media`, `note`, `person`, `scrobble`, the country/genre/language/network lookups, and `bulk export`.
+
 ## Output
 
 Default is the JSON envelope:
@@ -103,20 +142,22 @@ Errors use `{ "ok": false, "error": { "code", "message", "http_status", "hint" }
 traktctl commands          # full command tree as JSON
 traktctl <cmd> --llm       # machine-readable help: usage, flags, examples, schema
 traktctl <cmd> --help      # human help
+traktctl completion <shell># shell completion script (bash/zsh/fish/powershell)
 ```
 
 ## Testing
 
 ```
-go test ./...                  # unit tests (client, output)
-go test -tags=live ./test/...  # live smoke suite (needs repo config.toml + tokens.json)
+go test ./...                  # unit tests (client, output, commands, config)
+go test -tags=live ./test/...  # live smoke suite (needs config.toml + a Keychain token; skips if absent)
+go test -tags=live,refresh ./test/...  # adds the token-rotating refresh test
 ./test/live_probes.sh          # account-safe existence probes for mutating routes
 ```
 
 ## Secrets
 
-`config.toml` and `tokens.json` hold the client secret and live tokens. They are kept out of git via `.git/info/exclude` — never commit them. For distribution, tokens belong in the keychain and the client secret in the environment.
+`config.toml` holds the client secret; OAuth tokens live in the macOS Keychain (an on-disk `tokens.json` is only a dev fallback and is not present by default). Both `config.toml` and `tokens.json` are kept out of git via `.git/info/exclude` — never commit them. For distribution, tokens belong in the keychain and the client secret in the environment.
 
 ## Scope
 
-v1 groups: `auth`, `search`, `movie`, `show`, `season`, `episode`, `calendar`, `recommend`, `sync`, `user`. Deferred to v2: bulk export, and the `checkin`/`cert`/`comment`/`list`/`media`/`note`/`person`/`scrobble`/lookup groups. See the build plan and spec in the Obsidian vault for the full surface.
+v1 groups: `auth`, `config`, `search`, `movie`, `show`, `season`, `episode`, `calendar`, `recommend`, `sync`, `user`. Deferred to v2: bulk export, and the `checkin`/`cert`/`comment`/`list`/`media`/`note`/`person`/`scrobble`/lookup groups. See the build plan and spec in the Obsidian vault for the full surface.

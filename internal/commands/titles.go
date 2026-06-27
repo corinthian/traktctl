@@ -2,12 +2,12 @@ package commands
 
 import "github.com/spf13/cobra"
 
-// mediaGroup builds the command surface shared by the `movie` and `show`
-// groups (spec: "show ... same shape as the movie group"). typ is the API path
+// titleGroup builds the command surface shared by the `movie` and `show`
+// groups (a Trakt "title" = a movie or show). typ is the API path
 // segment ("movies" or "shows"). Callers add type-specific subcommands to the
 // returned command. This shared builder is the canonical table-fill pattern the
 // per-group fan-out copies.
-func mediaGroup(app *App, use, typ, short string) *cobra.Command {
+func titleGroup(app *App, use, typ, short string) *cobra.Command {
 	root := &cobra.Command{Use: use, Short: short}
 	base := "/" + typ
 

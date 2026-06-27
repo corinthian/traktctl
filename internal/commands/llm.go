@@ -10,6 +10,9 @@ import (
 )
 
 // llmHelp is the machine-readable per-command help object emitted by --llm.
+// Per the spec, every command's --llm returns {usage, args, flags, examples,
+// output_schema}; output_schema is always present (no omitempty) and examples
+// is always populated.
 type llmHelp struct {
 	Command      string     `json:"command"`
 	Usage        string     `json:"usage"`
@@ -17,7 +20,7 @@ type llmHelp struct {
 	Args         []string   `json:"args"`
 	Flags        []llmFlag  `json:"flags"`
 	Examples     []string   `json:"examples"`
-	OutputSchema string     `json:"output_schema,omitempty"`
+	OutputSchema string     `json:"output_schema"`
 	Subcommands  []llmChild `json:"subcommands,omitempty"`
 }
 
@@ -52,8 +55,14 @@ func emitLLMHelp(cmd *cobra.Command, out *output.Writer) {
 	})
 	if ex := cmd.Annotations["examples"]; ex != "" {
 		h.Examples = strings.Split(ex, "\n")
+	} else {
+		h.Examples = synthExamples(cmd)
 	}
-	h.OutputSchema = cmd.Annotations["output_schema"]
+	if os := cmd.Annotations["output_schema"]; os != "" {
+		h.OutputSchema = os
+	} else {
+		h.OutputSchema = synthOutputSchema(cmd)
+	}
 	for _, c := range cmd.Commands() {
 		if c.Hidden || c.Name() == "help" {
 			continue
@@ -62,6 +71,37 @@ func emitLLMHelp(cmd *cobra.Command, out *output.Writer) {
 	}
 	data, _ := json.MarshalIndent(h, "", "  ")
 	out.Out.Write(append(data, '\n'))
+}
+
+// synthExamples builds at least one usable example invocation when a command
+// supplies none via annotations, so the --llm `examples` key is never null.
+func synthExamples(cmd *cobra.Command) []string {
+	path := cmd.CommandPath()
+	// Group/parent: show how to discover and machine-read it. (Parents are
+	// hardened with a RunE, so detect them by their subcommands, not RunE==nil.)
+	if cmd.HasSubCommands() {
+		return []string{path + " --help", path + " --llm"}
+	}
+	ex := path
+	// Append common flags (incl. the inherited --id) with placeholder values.
+	// Groups returned early above, so this runs only for leaf commands.
+	for _, f := range []string{"id", "show", "season", "episode", "q", "type", "list-id", "section", "year"} {
+		if fl := cmd.Flags().Lookup(f); fl != nil {
+			ex += " --" + f + " <" + f + ">"
+		}
+	}
+	out := []string{ex}
+	out = append(out, ex+" --terse")
+	return out
+}
+
+// synthOutputSchema returns a default description of the --llm output contract
+// when a command does not annotate its own. The envelope is uniform across all
+// commands, so the default documents that envelope.
+func synthOutputSchema(cmd *cobra.Command) string {
+	return "JSON envelope: {ok:bool, data:object|array|null, meta:{endpoint,duration_ms," +
+		"trakt_api_version,pagination?}} on success; {ok:false, error:{code,message," +
+		"http_status?,hint?}} on failure. data is the raw Trakt response for this endpoint."
 }
 
 // commandNode is a node in the `traktctl commands` JSON tree.

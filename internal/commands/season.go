@@ -27,8 +27,42 @@ func newSeasonCmd(app *App) *cobra.Command {
 		"sort: newest|oldest|likes|replies"))
 	root.AddCommand(app.seasonTrailing("translations", "Season translations", "/translations", "lang", "",
 		"two-letter language code"))
+	root.AddCommand(app.seasonTrailing("lists", "Lists containing this season", "/lists", "type", "personal",
+		"list type: all|personal|official|watchlists"))
+
+	root.AddCommand(app.seasonReport())
 
 	return root
+}
+
+// seasonReport: POST /shows/{id}/seasons/{n}/report. Destructive (files a
+// report against the item), so confirm-gated like the sync mutations.
+func (a *App) seasonReport() *cobra.Command {
+	var show, season string
+	c := &cobra.Command{
+		Use:   "report",
+		Short: "Report a season (destructive; requires --confirm)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !a.confirmed() {
+				return output.NewError(output.CodeBadConfig,
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+			}
+			if show == "" {
+				return output.NewError(output.CodeBadConfig, "missing required --show", output.ExitUser)
+			}
+			if season == "" {
+				return output.NewError(output.CodeBadConfig, "missing required --season", output.ExitUser)
+			}
+			res, err := a.post("/shows/"+show+"/seasons/"+season+"/report", a.baseOpts(true))
+			if err != nil {
+				return err
+			}
+			return a.emit(res, "")
+		},
+	}
+	c.Flags().StringVar(&show, "show", "", "show id")
+	c.Flags().StringVar(&season, "season", "", "season number")
+	return c
 }
 
 // showScoped builds a command scoped by --show and optionally --season. When

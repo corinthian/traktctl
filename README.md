@@ -2,6 +2,22 @@
 
 JSON-first CLI wrapper over the [Trakt API](https://trakt.tv). A dumb transport layer: CLI args in, Trakt HTTP out, a stable `{ok,data,meta}` envelope back. Component of the Subtrakt orchestration system (metadata/intent layer).
 
+## Install
+
+Prebuilt universal macOS binary (arm64 + x86_64) from the latest release. The repo is private, so download via `gh`:
+
+```
+gh release download v1.0.0 -R corinthian/traktctl \
+  -p 'traktctl-1.0.0-universal-macos.tar.gz' -p 'traktctl-1.0.0-SHA256SUMS'
+shasum -a 256 -c traktctl-1.0.0-SHA256SUMS
+tar -xzf traktctl-1.0.0-universal-macos.tar.gz
+xattr -d com.apple.quarantine traktctl 2>/dev/null || true   # ad-hoc signed, not notarized
+sudo mv traktctl /usr/local/bin/
+traktctl --version
+```
+
+Per-arch tarballs (`-arm64-`, `-amd64-`) are attached to the same release. To build from source instead, see below.
+
 ## Build
 
 ```

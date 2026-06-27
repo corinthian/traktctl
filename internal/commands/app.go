@@ -121,6 +121,12 @@ func (a *App) emit(res *client.Result, terse string) error {
 		TraktAPIVersion: "2",
 		Pagination:      res.Pagination,
 	}
+	// Under --terse, when the caller did not supply an explicit summary, derive
+	// a human one-liner from the response shape (falls back to compact JSON in
+	// the writer when summarize returns "").
+	if terse == "" && a.Out.Format == output.FormatTerse {
+		terse = summarize(res.Data)
+	}
 	// 204/empty bodies emit a null-data success envelope.
 	return a.Out.Emit(&output.Result{Data: res.Data, Meta: meta, Terse: terse})
 }
@@ -154,6 +160,15 @@ func (a *App) get(path string, opts client.Options) (*client.Result, error) {
 // post is a convenience for a POST call.
 func (a *App) post(path string, opts client.Options) (*client.Result, error) {
 	res, cerr := a.Client.Do(a.ctx(), http.MethodPost, path, opts)
+	if cerr != nil {
+		return nil, cerr
+	}
+	return res, nil
+}
+
+// del is a convenience for a DELETE call.
+func (a *App) del(path string, opts client.Options) (*client.Result, error) {
+	res, cerr := a.Client.Do(a.ctx(), http.MethodDelete, path, opts)
 	if cerr != nil {
 		return nil, cerr
 	}

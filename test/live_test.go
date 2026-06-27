@@ -2,10 +2,14 @@
 
 // Package live is the live smoke suite. It exercises the compiled binary
 // against api.trakt.tv using the repo-root config.toml + tokens.json, one read
-// per command group plus the auth-refresh path. Excluded from the default
-// `go test` by the `live` build tag.
+// per command group. Excluded from the default `go test` by the `live` build
+// tag.
 //
 //	go test -tags=live ./test/...
+//
+// The OAuth refresh path is NOT exercised here: it requires a near-expiry
+// access token and a human-driven login to seed, so it is verified manually
+// (see auth login/refresh) rather than in this automated suite.
 //
 // Mutations are NOT fired here; the destructive paths are covered by the
 // account-safe trakt:0 no-op probes in live_probes.sh.

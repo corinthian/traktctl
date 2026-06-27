@@ -20,6 +20,52 @@ func (a *App) requireID() (string, error) {
 	return a.Flags.ID, nil
 }
 
+// validIDTypes is the full id-type enum accepted by Trakt's search/lookup.
+var validIDTypes = map[string]bool{
+	"trakt": true, "slug": true, "imdb": true, "tmdb": true, "tvdb": true,
+}
+
+// lookupIDTypes are the id types Trakt serves on /{id} object endpoints
+// (movie/show get, aliases, etc.). tmdb/tvdb are NOT served there — they only
+// work via `search id`.
+var lookupIDTypes = map[string]bool{"trakt": true, "slug": true, "imdb": true}
+
+// validateIDType rejects an --id-type value outside the {trakt,slug,imdb,tmdb,
+// tvdb} enum. Applied globally in PersistentPreRunE so every command (including
+// `search id`) catches a typo'd value.
+func validateIDType(idType string) *output.CLIError {
+	if idType == "" || validIDTypes[idType] {
+		return nil
+	}
+	e := output.NewError(output.CodeBadConfig,
+		"invalid --id-type "+strconv.Quote(idType), output.ExitUser)
+	e.Hint = "valid id types: trakt, slug, imdb, tmdb, tvdb"
+	return e
+}
+
+// requireLookupID returns the --id and enforces that --id-type is one Trakt
+// serves on /{id} object endpoints (trakt|slug|imdb). An unsupported type
+// (tmdb|tvdb) errors instead of silently treating the value as a trakt id and
+// returning the wrong title. For external-id lookups, point at `search id`.
+func (a *App) requireLookupID() (string, error) {
+	id, err := a.requireID()
+	if err != nil {
+		return "", err
+	}
+	idType := a.Flags.IDType
+	if idType == "" {
+		idType = "trakt"
+	}
+	if !lookupIDTypes[idType] {
+		e := output.NewError(output.CodeBadConfig,
+			"--id-type "+strconv.Quote(idType)+" is not supported on this endpoint", output.ExitUser)
+		e.Hint = "this endpoint serves only trakt|slug|imdb ids; use `traktctl search id --id-type " +
+			idType + " --id " + id + "` to resolve an external id first"
+		return "", e
+	}
+	return id, nil
+}
+
 // getList builds a no-argument GET command (e.g. `movie trending`).
 func (a *App) getList(use, short, path string, auth bool) *cobra.Command {
 	return &cobra.Command{
@@ -41,7 +87,7 @@ func (a *App) getByID(use, short, prefix, suffix string, auth bool) *cobra.Comma
 		Use:   use,
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := a.requireID()
+			id, err := a.requireLookupID()
 			if err != nil {
 				return err
 			}
@@ -107,7 +153,7 @@ func (a *App) idSuffixCmd(use, short, prefix, suffix, flagName, flagDefault, fla
 		Use:   use,
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := a.requireID()
+			id, err := a.requireLookupID()
 			if err != nil {
 				return err
 			}

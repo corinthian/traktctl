@@ -28,6 +28,9 @@ func NewRoot() (*cobra.Command, *App) {
 				emitLLMHelp(cmd, app.Out)
 				os.Exit(0)
 			}
+			if cerr := validateIDType(g.IDType); cerr != nil {
+				return cerr
+			}
 			if cerr := app.build(); cerr != nil {
 				return cerr
 			}

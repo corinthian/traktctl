@@ -1,0 +1,9 @@
+# Build / release output
+/dist/
+
+# Local credential fallbacks (dev only; real creds live in env or macOS Keychain)
+/config.toml
+/tokens.json
+
+# macOS
+.DS_Store

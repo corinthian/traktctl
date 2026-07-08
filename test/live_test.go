@@ -39,8 +39,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rlarsen/traktctl/internal/auth"
-	"github.com/rlarsen/traktctl/internal/config"
+	"github.com/corinthian/traktctl/internal/auth"
+	"github.com/corinthian/traktctl/internal/config"
 )
 
 // repoRoot resolves the repo root from this test file's location.

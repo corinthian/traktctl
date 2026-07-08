@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rlarsen/traktctl/internal/output"
+	"github.com/corinthian/traktctl/internal/output"
 	"golang.org/x/time/rate"
 )
 

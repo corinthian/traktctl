@@ -3,7 +3,7 @@ package commands
 import (
 	"net/url"
 
-	"github.com/rlarsen/traktctl/internal/output"
+	"github.com/corinthian/traktctl/internal/output"
 	"github.com/spf13/cobra"
 )
 

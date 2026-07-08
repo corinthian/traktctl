@@ -56,7 +56,7 @@ Example `config.toml`:
 ```toml
 client_id     = "..."
 client_secret = "..."
-default_user  = "corinthian"
+default_user  = "you"
 base_url      = "https://api.trakt.tv"
 ```
 

@@ -4,7 +4,7 @@ JSON-first CLI wrapper over the [Trakt API](https://trakt.tv). A dumb transport 
 
 ## Install
 
-Prebuilt universal macOS binary (arm64 + x86_64) from the latest release. The repo is private, so download via `gh`:
+Prebuilt universal macOS binary (arm64 + x86_64) from the [latest release](https://github.com/corinthian/traktctl/releases/latest). Download with `gh`, or grab the tarball straight from the releases page:
 
 ```
 gh release download v1.0.0 -R corinthian/traktctl \

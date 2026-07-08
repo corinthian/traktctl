@@ -16,7 +16,15 @@ sudo mv traktctl /usr/local/bin/
 traktctl --version
 ```
 
-Per-arch tarballs (`-arm64-`, `-amd64-`) are attached to the same release. To build from source instead, see below.
+Per-arch tarballs (`-arm64-`, `-amd64-`) are attached to the same release.
+
+Or, with Go 1.26+, install from source directly:
+
+```
+go install github.com/corinthian/traktctl/cmd/traktctl@latest
+```
+
+The binary lands in `$(go env GOPATH)/bin` — make sure that's on your `PATH`. To build locally instead, see below.
 
 ## Quick start
 

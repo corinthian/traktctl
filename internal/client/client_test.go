@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rlarsen/traktctl/internal/output"
+	"github.com/corinthian/traktctl/internal/output"
 )
 
 // fakeTokens is a static TokenSource for tests.

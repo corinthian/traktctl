@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rlarsen/traktctl/internal/output"
+	"github.com/corinthian/traktctl/internal/output"
 )
 
 // TestValidateIDType covers the global --id-type enum check (R3/BUG-3).
@@ -103,7 +103,7 @@ func TestSummarize(t *testing.T) {
 		{"list", `{"name":"Best of 2024","item_count":42}`, "Best of 2024 (42 items)"},
 		{"single list with owner", `{"name":"All Time Favorite Movies","item_count":37,"ids":{"trakt":1625180},"user":{"username":"justin","name":"Justin"}}`, "All Time Favorite Movies (37 items)"},
 		{"bare season number only", `{"number":1,"ids":{"trakt":3962}}`, "Season 1"},
-		{"user", `{"username":"corinthian","name":"Rex"}`, "Rex (@corinthian)"},
+		{"user", `{"username":"alice","name":"Alice"}`, "Alice (@alice)"},
 		{"array of movies", `[{"title":"A","year":2000},{"title":"B","year":2001}]`, "A (2000) (+1 more)"},
 		{"single-element array", `[{"title":"Solo","year":2018}]`, "Solo (2018)"},
 	}

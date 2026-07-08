@@ -10,10 +10,10 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/rlarsen/traktctl/internal/auth"
-	"github.com/rlarsen/traktctl/internal/client"
-	"github.com/rlarsen/traktctl/internal/config"
-	"github.com/rlarsen/traktctl/internal/output"
+	"github.com/corinthian/traktctl/internal/auth"
+	"github.com/corinthian/traktctl/internal/client"
+	"github.com/corinthian/traktctl/internal/config"
+	"github.com/corinthian/traktctl/internal/output"
 )
 
 // Version is the binary version, stamped into the User-Agent and help.

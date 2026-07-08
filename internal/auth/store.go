@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/rlarsen/traktctl/internal/config"
+	"github.com/corinthian/traktctl/internal/config"
 	keyring "github.com/zalando/go-keyring"
 )
 

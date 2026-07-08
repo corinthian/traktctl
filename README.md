@@ -7,10 +7,10 @@ JSON-first CLI wrapper over the [Trakt API](https://trakt.tv). A dumb transport 
 Prebuilt universal macOS binary (arm64 + x86_64) from the [latest release](https://github.com/corinthian/traktctl/releases/latest). Download with `gh`, or grab the tarball straight from the releases page:
 
 ```
-gh release download v1.0.0 -R corinthian/traktctl \
-  -p 'traktctl-1.0.0-universal-macos.tar.gz' -p 'traktctl-1.0.0-SHA256SUMS'
-shasum -a 256 -c traktctl-1.0.0-SHA256SUMS
-tar -xzf traktctl-1.0.0-universal-macos.tar.gz
+gh release download v1.0.1 -R corinthian/traktctl \
+  -p 'traktctl-1.0.1-universal-macos.tar.gz' -p 'traktctl-1.0.1-SHA256SUMS'
+shasum -a 256 -c traktctl-1.0.1-SHA256SUMS
+tar -xzf traktctl-1.0.1-universal-macos.tar.gz
 xattr -d com.apple.quarantine traktctl 2>/dev/null || true   # ad-hoc signed, not notarized
 sudo mv traktctl /usr/local/bin/
 traktctl --version

@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rlarsen/traktctl/internal/config"
+	"github.com/corinthian/traktctl/internal/config"
 )
 
 // Manager owns the token lifecycle and satisfies the client's TokenSource

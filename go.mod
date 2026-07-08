@@ -1,4 +1,4 @@
-module github.com/rlarsen/traktctl
+module github.com/corinthian/traktctl
 
 go 1.26.4
 

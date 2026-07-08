@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/rlarsen/traktctl/internal/client"
-	"github.com/rlarsen/traktctl/internal/output"
+	"github.com/corinthian/traktctl/internal/client"
+	"github.com/corinthian/traktctl/internal/output"
 	"github.com/spf13/cobra"
 )
 

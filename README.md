@@ -1,6 +1,6 @@
 # traktctl
 
-JSON-first CLI wrapper over the [Trakt API](https://trakt.tv). A dumb transport layer: CLI args in, Trakt HTTP out, a stable `{ok,data,meta}` envelope back. Component of the Subtrakt orchestration system (metadata/intent layer).
+JSON-first CLI wrapper over the [Trakt API](https://trakt.tv). A dumb transport layer: CLI args in, Trakt HTTP out, a stable `{ok,data,meta}` envelope back.
 
 ## Install
 
@@ -164,8 +164,4 @@ go test -tags=live,refresh ./test/...  # adds the token-rotating refresh test
 
 ## Secrets
 
-`config.toml` holds the client secret; OAuth tokens live in the macOS Keychain (an on-disk `tokens.json` is only a dev fallback and is not present by default). Both `config.toml` and `tokens.json` are kept out of git via `.git/info/exclude` — never commit them. For distribution, tokens belong in the keychain and the client secret in the environment.
-
-## Scope
-
-v1 groups: `auth`, `config`, `search`, `movie`, `show`, `season`, `episode`, `calendar`, `recommend`, `sync`, `user`. Deferred to v2: bulk export, and the `checkin`/`cert`/`comment`/`list`/`media`/`note`/`person`/`scrobble`/lookup groups. See the build plan and spec in the Obsidian vault for the full surface.
+`config.toml` holds the client secret; OAuth tokens live in the macOS Keychain (an on-disk `tokens.json` is only a dev fallback and is not present by default). Both `config.toml` and `tokens.json` are kept out of git via `.gitignore` — never commit them. For distribution, tokens belong in the keychain and the client secret in the environment.

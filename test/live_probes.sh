@@ -8,8 +8,10 @@
 #                404/405/412 = no such route.
 set -u
 cd "$(dirname "$0")/.."
-CID=$(grep client_id config.toml | head -1 | cut -d'"' -f2)
-CSEC=$(grep client_secret config.toml | head -1 | cut -d'"' -f2)
+CONFIG="${TRAKTCTL_CONFIG:-$HOME/.config/traktctl/config.toml}"
+[ -f config.toml ] && CONFIG=config.toml
+CID=$(grep client_id "$CONFIG" | head -1 | cut -d"'" -f2)
+CSEC=$(grep client_secret "$CONFIG" | head -1 | cut -d"'" -f2)
 TOK=$(jq -r .access_token tokens.json)
 H=(-H "Content-Type: application/json" -H "trakt-api-version: 2" -H "trakt-api-key: $CID")
 A=(-H "Authorization: Bearer $TOK")

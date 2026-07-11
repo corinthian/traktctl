@@ -165,3 +165,7 @@ go test -tags=live,refresh ./test/...  # adds the token-rotating refresh test
 ## Secrets
 
 `config.toml` holds the client secret; OAuth tokens live in the macOS Keychain (an on-disk `tokens.json` is only a dev fallback and is not present by default). Both `config.toml` and `tokens.json` are kept out of git via `.gitignore` — never commit them. For distribution, tokens belong in the keychain and the client secret in the environment.
+
+## Skill
+
+`.claude/skills/traktctl/` is a [Claude Code](https://claude.com/claude-code) skill that speaks natural language over this CLI — search, watchlist, ratings, recommendations, calendar, stats — without you needing to know the flags. Install it by copying the directory to `~/.claude/skills/traktctl/`. `LESSONS.md` starts empty; it's a local, per-install log that accumulates corrections as you use the skill, and it never needs to be shared or committed back here.

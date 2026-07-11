@@ -107,7 +107,7 @@ traktctl calendar all-movies --start 2026-06-26 --days 7
 
 Global flags: `--extended`, `--page/--limit/--all` (`--really-all` to bypass the 100-page cap), `--filter k=v` (repeatable), `--id-type/--id`, `--raw/--ndjson/--terse`, `--confirm`, `--llm`.
 
-Destructive verbs (any `remove`, `auth revoke`, sync `settings`/`reorder`/`update-item`, `playback remove`) require `--confirm` or `TRAKTCTL_CONFIRM=1`. Adds are idempotent and need no confirmation.
+Destructive verbs require `--confirm` or `TRAKTCTL_CONFIRM=1`: every `remove`, `auth revoke`, watchlist/favorites `settings`/`reorder`/`update-item`, `user hidden add`/`remove`, the `user` social mutations (`follow`, `block`, `requests-respond`, `report`), and every `user list-*` write. `sync ... add` verbs are idempotent and run unconfirmed, as does `recommend hide-movie`/`hide-show` (idempotent DELETE).
 
 ## Command surface
 
@@ -124,7 +124,7 @@ Every command is `traktctl <group> <verb> [--flags]`. Run `traktctl <group> --he
 - **episode** — `summary`, `comments`, `lists`, `people`, `ratings`, `stats`, `translations`, `videos`, `watching`.
 - **calendar** — upcoming releases; `all-*` are public, `my-*` are your personal calendar: `shows`, `new-shows`, `premieres`, `finales`, `movies`, `dvd`, `streaming` (each in `all-`/`my-` form). Take `--start DATE --days N`.
 - **recommend** — personalized: `movies`, `shows`, plus `hide-movie`/`hide-show` to suppress a title.
-- **sync** — personal data reads + mutations: `activities` (cheap change-poll), `collection`, `watched`, `history`, `ratings`, `watchlist`, `favorites`, `playback`. Reads support `get`; mutating verbs (`add`/`remove`, and `settings`/`reorder`/`update-item` on watchlist/favorites) gate behind `--confirm`.
+- **sync** — personal data reads + mutations: `activities` (cheap change-poll), `collection`, `watched`, `history`, `ratings`, `watchlist`, `favorites`, `playback`. Reads support `get`; `add` is idempotent and unconfirmed, `remove` and the watchlist/favorites `settings`/`reorder`/`update-item` verbs gate behind `--confirm`. `watched` is read-only (mutate seen-status via `history`); `playback` has `get`/`remove` only.
 - **user** — profile and personal data (44 verbs):
   - reads: `profile`, `settings`, `stats`, `watchlist`, `watched`, `history`, `ratings`, `collection`, `favorites`, `comments`, `notes`, `likes`, `lists`, `watching`, `hidden`, `saved-filters`.
   - list management: `list`, `list-items`, `list-create`, `list-delete`, `list-update`, `list-items-add`, `list-items-remove`, `list-items-reorder`, `list-item-update`, `lists-reorder`, `list-like`/`list-unlike`, `list-comments`, `list-report`.
@@ -165,3 +165,7 @@ go test -tags=live,refresh ./test/...  # adds the token-rotating refresh test
 ## Secrets
 
 `config.toml` holds the client secret; OAuth tokens live in the macOS Keychain (an on-disk `tokens.json` is only a dev fallback and is not present by default). Both `config.toml` and `tokens.json` are kept out of git via `.gitignore` — never commit them. For distribution, tokens belong in the keychain and the client secret in the environment.
+
+## Skill
+
+`.claude/skills/traktctl/` is a [Claude Code](https://claude.com/claude-code) skill that speaks natural language over this CLI — search, watchlist, ratings, recommendations, calendar, stats — without you needing to know the flags. Install it by copying the directory to `~/.claude/skills/traktctl/`. `LESSONS.md` starts empty; it's a local, per-install log that accumulates corrections as you use the skill, and it never needs to be shared or committed back here.

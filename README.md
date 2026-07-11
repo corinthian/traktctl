@@ -32,7 +32,7 @@ From zero to authenticated. You need a Trakt application's `client_id`/`client_s
 
 ```
 # 1. Write config + log in, in one shot:
-traktctl config init --client-id ID --client-secret SECRET --default-user you --login
+traktctl config init --client-id ID --client-secret SECRET --login
 #    Prints a device code + URL to stderr — open the URL, enter the code, approve.
 
 # 2. Confirm and make your first authenticated call:
@@ -64,7 +64,7 @@ Example `config.toml`:
 ```toml
 client_id     = "..."
 client_secret = "..."
-default_user  = "you"
+default_user  = "your-trakt-username"   # optional; user-scoped reads fall back to "me"
 base_url      = "https://api.trakt.tv"
 ```
 
@@ -73,7 +73,7 @@ base_url      = "https://api.trakt.tv"
 A fresh machine needs credentials then tokens:
 
 ```
-traktctl config init --client-id ID --client-secret SECRET --default-user you
+traktctl config init --client-id ID --client-secret SECRET
 traktctl auth login
 # or one shot:
 traktctl config init --client-id ID --client-secret SECRET --login

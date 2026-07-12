@@ -29,6 +29,7 @@ type llmFlag struct {
 	Type    string `json:"type"`
 	Default string `json:"default,omitempty"`
 	Usage   string `json:"usage"`
+	Scope   string `json:"scope"`
 }
 
 type llmChild struct {
@@ -49,8 +50,12 @@ func emitLLMHelp(cmd *cobra.Command, out *output.Writer) {
 		h.Args = cmd.ValidArgs
 	}
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		scope := "inherited"
+		if cmd.LocalFlags().Lookup(f.Name) != nil {
+			scope = "local"
+		}
 		h.Flags = append(h.Flags, llmFlag{
-			Name: f.Name, Type: f.Value.Type(), Default: f.DefValue, Usage: f.Usage,
+			Name: f.Name, Type: f.Value.Type(), Default: f.DefValue, Usage: f.Usage, Scope: scope,
 		})
 	})
 	if ex := cmd.Annotations["examples"]; ex != "" {
@@ -83,10 +88,12 @@ func synthExamples(cmd *cobra.Command) []string {
 		return []string{path + " --help", path + " --llm"}
 	}
 	ex := path
-	// Append common flags (incl. the inherited --id) with placeholder values.
-	// Groups returned early above, so this runs only for leaf commands.
-	for _, f := range []string{"id", "show", "season", "episode", "q", "type", "list-id", "section", "year"} {
-		if fl := cmd.Flags().Lookup(f); fl != nil {
+	// Append common flags with placeholder values, restricted to flags the
+	// command itself declares (LocalFlags) so inherited globals like --id
+	// don't leak into examples for commands that ignore them. Groups
+	// returned early above, so this runs only for leaf commands.
+	for _, f := range []string{"id", "show", "season", "episode", "q", "type", "list-id", "section", "year", "payload"} {
+		if fl := cmd.LocalFlags().Lookup(f); fl != nil {
 			ex += " --" + f + " <" + f + ">"
 		}
 	}

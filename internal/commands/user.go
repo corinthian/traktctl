@@ -250,6 +250,9 @@ func (a *App) hiddenWrite(use, short, suffix string) *cobra.Command {
 				return output.NewError(output.CodeBadConfig,
 					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
+			if idErr := rejectIDFlags(cmd); idErr != nil {
+				return idErr
+			}
 			if section == "" {
 				return output.NewError(output.CodeBadConfig, "missing required --section", output.ExitUser)
 			}
@@ -263,7 +266,7 @@ func (a *App) hiddenWrite(use, short, suffix string) *cobra.Command {
 			if perr != nil {
 				return perr
 			}
-			return a.emit(res, "")
+			return a.emitMutation(res, "")
 		},
 	}
 	c.Flags().StringVar(&section, "section", "", "hidden section")
@@ -641,6 +644,9 @@ func (a *App) userListBodyWrite(use, short, suffix, method string, needListID bo
 				return output.NewError(output.CodeBadConfig,
 					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
+			if idErr := rejectIDFlags(cmd); idErr != nil {
+				return idErr
+			}
 			path := "/users/" + a.userTarget(user)
 			if needListID {
 				if listID == "" {
@@ -660,7 +666,7 @@ func (a *App) userListBodyWrite(use, short, suffix, method string, needListID bo
 			if cerr != nil {
 				return cerr
 			}
-			return a.emit(res, "")
+			return a.emitMutation(res, "")
 		},
 	}
 	c.Flags().StringVar(&user, "user", "", "target username")
@@ -761,6 +767,9 @@ func (a *App) userListBodyWriteOptionalBody(use, short, suffix, method string, n
 				return output.NewError(output.CodeBadConfig,
 					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
+			if idErr := rejectIDFlags(cmd); idErr != nil {
+				return idErr
+			}
 			prefix, err := a.listPrefix(user, listID)
 			if err != nil {
 				return err
@@ -777,7 +786,7 @@ func (a *App) userListBodyWriteOptionalBody(use, short, suffix, method string, n
 			if cerr != nil {
 				return cerr
 			}
-			return a.emit(res, "")
+			return a.emitMutation(res, "")
 		},
 	}
 	bindUserList(c, &user, &listID)
@@ -796,6 +805,9 @@ func (a *App) userListItemUpdate() *cobra.Command {
 				return output.NewError(output.CodeBadConfig,
 					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
+			if idErr := rejectIDFlags(cmd); idErr != nil {
+				return idErr
+			}
 			prefix, err := a.listPrefix(user, listID)
 			if err != nil {
 				return err
@@ -813,7 +825,7 @@ func (a *App) userListItemUpdate() *cobra.Command {
 			if cerr != nil {
 				return cerr
 			}
-			return a.emit(res, "")
+			return a.emitMutation(res, "")
 		},
 	}
 	bindUserList(c, &user, &listID)
@@ -833,6 +845,9 @@ func (a *App) userReport() *cobra.Command {
 				return output.NewError(output.CodeBadConfig,
 					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
+			if idErr := rejectIDFlags(cmd); idErr != nil {
+				return idErr
+			}
 			if user == "" {
 				return output.NewError(output.CodeBadConfig, "missing required --user", output.ExitUser)
 			}
@@ -848,7 +863,7 @@ func (a *App) userReport() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.emit(res, "")
+			return a.emitMutation(res, "")
 		},
 	}
 	c.Flags().StringVar(&user, "user", "", "target username")

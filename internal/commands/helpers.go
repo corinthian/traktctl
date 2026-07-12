@@ -184,6 +184,9 @@ func (a *App) postCmd(use, short, path string, confirmRequired bool) *cobra.Comm
 				return output.NewError(output.CodeBadConfig,
 					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
+			if cerr := rejectIDFlags(cmd); cerr != nil {
+				return cerr
+			}
 			body, err := parsePayload(payload)
 			if err != nil {
 				return err
@@ -194,7 +197,7 @@ func (a *App) postCmd(use, short, path string, confirmRequired bool) *cobra.Comm
 			if perr != nil {
 				return perr
 			}
-			return a.emit(res, "")
+			return a.emitMutation(res, "")
 		},
 	}
 	c.Flags().StringVar(&payload, "payload", "", "request body as JSON")
@@ -213,6 +216,9 @@ func (a *App) putCmd(use, short, path string, confirmRequired bool) *cobra.Comma
 				return output.NewError(output.CodeBadConfig,
 					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
+			if idErr := rejectIDFlags(cmd); idErr != nil {
+				return idErr
+			}
 			body, err := parsePayload(payload)
 			if err != nil {
 				return err
@@ -223,7 +229,7 @@ func (a *App) putCmd(use, short, path string, confirmRequired bool) *cobra.Comma
 			if cerr != nil {
 				return cerr
 			}
-			return a.emit(res, "")
+			return a.emitMutation(res, "")
 		},
 	}
 	c.Flags().StringVar(&payload, "payload", "", "request body as JSON")
@@ -242,6 +248,9 @@ func (a *App) putItemCmd(use, short, prefix string) *cobra.Command {
 				return output.NewError(output.CodeBadConfig,
 					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
+			if idErr := rejectIDFlags(cmd); idErr != nil {
+				return idErr
+			}
 			if itemID == "" {
 				return output.NewError(output.CodeBadConfig, "missing required --list-item-id", output.ExitUser)
 			}
@@ -255,7 +264,7 @@ func (a *App) putItemCmd(use, short, prefix string) *cobra.Command {
 			if cerr != nil {
 				return cerr
 			}
-			return a.emit(res, "")
+			return a.emitMutation(res, "")
 		},
 	}
 	c.Flags().StringVar(&itemID, "list-item-id", "", "list item id")

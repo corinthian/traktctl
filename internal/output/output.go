@@ -19,6 +19,7 @@ const (
 	ExitTransport   ExitCode = 3 // TLS, DNS, timeout
 	ExitInternal    ExitCode = 4 // internal traktctl error
 	ExitAuthMissing ExitCode = 5 // auth required and never logged in
+	ExitNotApplied  ExitCode = 6 // Trakt returned 2xx but applied nothing
 )
 
 // Error-code enum values (the error envelope's `code` field).
@@ -36,6 +37,9 @@ const (
 	CodeTransportTimeout  = "TRANSPORT_TIMEOUT"
 	CodeParseError        = "PARSE_ERROR"
 	CodePaginationRunaway = "PAGINATION_RUNAWAY"
+	// CodeNotApplied: Trakt accepted the request (2xx) and applied none of it.
+	// Distinct from TRAKT_NOT_FOUND, which is HTTP-404 semantics.
+	CodeNotApplied = "NOT_APPLIED"
 )
 
 // Envelope is the standard success/error wrapper.
@@ -60,6 +64,13 @@ type Meta struct {
 	DurationMS      int64       `json:"duration_ms"`
 	TraktAPIVersion string      `json:"trakt_api_version,omitempty"`
 	Pagination      *Pagination `json:"pagination,omitempty"`
+
+	// Partial marks a mutation that applied some items but not all. The items
+	// Trakt refused are surfaced here — NotFound for add/remove, SkippedIDs for
+	// reorder — so a partial success cannot read as a total one.
+	Partial    bool            `json:"partial,omitempty"`
+	NotFound   json.RawMessage `json:"not_found,omitempty"`
+	SkippedIDs json.RawMessage `json:"skipped_ids,omitempty"`
 }
 
 // Pagination mirrors Trakt's X-Pagination-* response headers.
@@ -80,6 +91,13 @@ type CLIError struct {
 	Exit       ExitCode
 	Endpoint   string
 	DurationMS int64
+
+	// RawBody is an upstream 2xx body that --raw must still pass through
+	// verbatim even though this is an error. Only NOT_APPLIED sets it: Trakt
+	// answered successfully and the body is the evidence a --raw caller wants.
+	// Under --raw the verdict rides the exit code, which is raw mode's only
+	// verdict channel (it has no `ok:` field).
+	RawBody json.RawMessage
 }
 
 func (e *CLIError) Error() string { return e.Message }
@@ -143,7 +161,15 @@ func (w *Writer) Emit(r *Result) error {
 // EmitError renders a CLIError as an error envelope and returns the exit code.
 // --raw still emits the structured error (there is no upstream body to pass
 // through on most failures); errors are always machine-readable.
+//
+// The exception is an error carrying RawBody (NOT_APPLIED): there Trakt did
+// answer 2xx, so --raw keeps its passthrough promise and emits the upstream
+// body untouched, leaving the exit code to carry the verdict.
 func (w *Writer) EmitError(e *CLIError) ExitCode {
+	if w.Format == FormatRaw && len(e.RawBody) > 0 {
+		_ = w.writeRaw(e.RawBody)
+		return e.exitOrInternal()
+	}
 	env := Envelope{
 		OK: false,
 		Error: &ErrorBody{
@@ -157,6 +183,11 @@ func (w *Writer) EmitError(e *CLIError) ExitCode {
 		env.Meta = &Meta{Endpoint: e.Endpoint, DurationMS: e.DurationMS}
 	}
 	_ = w.writeJSON(env)
+	return e.exitOrInternal()
+}
+
+// exitOrInternal guards against a zero-value Exit silently meaning success.
+func (e *CLIError) exitOrInternal() ExitCode {
 	if e.Exit == ExitOK {
 		return ExitInternal
 	}

@@ -7,6 +7,7 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/corinthian/traktctl/internal/client"
 	"github.com/corinthian/traktctl/internal/config"
 	"github.com/corinthian/traktctl/internal/output"
+	"github.com/spf13/cobra"
 )
 
 // Version is the binary version, stamped into the User-Agent and help.
@@ -131,6 +133,139 @@ func (a *App) emit(res *client.Result, terse string) error {
 	return a.Out.Emit(&output.Result{Data: res.Data, Meta: meta, Terse: terse})
 }
 
+// mutationBuckets is the subset of a Trakt write response that says whether the
+// request actually changed anything. The buckets vary by endpoint: adds return
+// added/existing, removes return deleted, reorders return updated/skipped_ids.
+// Every field is optional — an endpoint we do not model simply decodes to zeros.
+type mutationBuckets struct {
+	Added      map[string]int             `json:"added"`
+	Existing   map[string]int             `json:"existing"`
+	Deleted    map[string]int             `json:"deleted"`
+	Updated    *int                       `json:"updated"`
+	NotFound   map[string]json.RawMessage `json:"not_found"`
+	SkippedIDs []json.RawMessage          `json:"skipped_ids"`
+}
+
+// applied counts everything the request actually accomplished. `existing` counts
+// as applied on purpose: an idempotent re-add of an item already present is a
+// true success — the desired state holds — and must not read as a no-op.
+func (b *mutationBuckets) applied() int {
+	n := sumCounts(b.Added) + sumCounts(b.Existing) + sumCounts(b.Deleted)
+	if b.Updated != nil {
+		n += *b.Updated
+	}
+	return n
+}
+
+// unresolved counts what Trakt refused to act on. Verified against the live API
+// (2026-07-12): on a remove, `not_found` means "could not resolve this id", NOT
+// "this item was not in your list" — deleting an absent-but-resolvable item
+// returns not_found:[] and deleted:0. That is what keeps idempotent removal a
+// success here, exactly as `existing` keeps idempotent adds one.
+// `skipped_ids` is reorder's equivalent signal.
+func (b *mutationBuckets) unresolved() int {
+	n := len(b.SkippedIDs)
+	for _, raw := range b.NotFound {
+		var arr []json.RawMessage
+		if err := json.Unmarshal(raw, &arr); err != nil {
+			continue // non-array bucket: not a not-found list, ignore
+		}
+		n += len(arr)
+	}
+	return n
+}
+
+func sumCounts(m map[string]int) int {
+	n := 0
+	for _, v := range m {
+		n += v
+	}
+	return n
+}
+
+// emitMutation is the success path for commands that can change account state.
+// It exists because a 2xx from Trakt does not mean the mutation did anything:
+// a body whose ids do not resolve returns 200 with every count at zero. Plain
+// emit() would render that as unqualified ok:true — a no-op that reads as
+// success, which is the failure this command class must never have.
+//
+// Reads keep using emit(); only the payload writers call this.
+func (a *App) emitMutation(res *client.Result, terse string) error {
+	meta := &output.Meta{
+		Endpoint:        res.Endpoint,
+		DurationMS:      res.DurationMS,
+		TraktAPIVersion: "2",
+		Pagination:      res.Pagination,
+	}
+
+	// Decode leniently and fail toward success: an unmodeled shape, an array
+	// body, or a 204 with no body must never manufacture a NOT_APPLIED.
+	var b mutationBuckets
+	if len(res.Data) > 0 {
+		_ = json.Unmarshal(res.Data, &b)
+	}
+	applied, unresolved := b.applied(), b.unresolved()
+
+	switch {
+	case unresolved == 0:
+		// Nothing was refused. Includes the idempotent cases and every
+		// endpoint whose response carries no buckets at all.
+
+	case applied == 0:
+		// Trakt accepted the request and applied none of it. Fail loudly.
+		return &output.CLIError{
+			Code: output.CodeNotApplied,
+			Message: fmt.Sprintf(
+				"nothing was applied: Trakt could not resolve %d item(s) in --payload; no changes were made",
+				unresolved),
+			Hint:       "check the ids/slugs in --payload (resolve them with `traktctl search`)",
+			Exit:       output.ExitNotApplied,
+			Endpoint:   res.Endpoint,
+			DurationMS: res.DurationMS,
+			RawBody:    res.Data,
+		}
+
+	default:
+		// Partial: some items landed, some did not. Still a success, but it
+		// must not read as a total one — surface exactly what Trakt refused.
+		meta.Partial = true
+		if b.NotFound != nil {
+			if raw, err := json.Marshal(b.NotFound); err == nil {
+				meta.NotFound = raw
+			}
+		}
+		if b.SkippedIDs != nil {
+			if raw, err := json.Marshal(b.SkippedIDs); err == nil {
+				meta.SkippedIDs = raw
+			}
+		}
+		if terse == "" && a.Out.Format == output.FormatTerse {
+			terse = fmt.Sprintf("partial: %d applied, %d unresolved", applied, unresolved)
+		}
+	}
+
+	if terse == "" && a.Out.Format == output.FormatTerse {
+		terse = summarize(res.Data)
+	}
+	return a.Out.Emit(&output.Result{Data: res.Data, Meta: meta, Terse: terse})
+}
+
+// rejectIDFlags fails a payload-only mutation that was handed --id/--id-type.
+// Those are lookup flags, hoisted to root as persistent flags, so every command
+// inherits them; the payload writers never read them. Silently ignoring them let
+// a caller believe --id selected the item while the body said otherwise.
+// Detect with Changed(), not by value: --id-type defaults to "trakt", so a value
+// comparison would either miss `--id-type trakt` or false-positive on the default.
+func rejectIDFlags(cmd *cobra.Command) *output.CLIError {
+	if !cmd.Flags().Changed("id") && !cmd.Flags().Changed("id-type") {
+		return nil
+	}
+	return output.NewError(output.CodeBadConfig,
+		"this command ignores --id/--id-type; a mutation takes its targeting from --payload "+
+			`(e.g. --payload '{"movies":[{"ids":{"slug":"gilda-1946"}}]}')`,
+		output.ExitUser)
+}
+
 // baseOpts builds client.Options from the global list/pagination/extended flags.
 func (a *App) baseOpts(auth bool) client.Options {
 	return client.Options{
@@ -184,7 +319,11 @@ func (a *App) confirmed() bool {
 // parsePayload decodes a --payload JSON string into a generic value.
 func parsePayload(s string) (interface{}, error) {
 	if s == "" {
-		return nil, output.NewError(output.CodeBadConfig, "missing required --payload JSON", output.ExitUser)
+		// Name the lookup-vs-mutation split here: this is the error a caller
+		// following the old (wrong) --id examples actually hits.
+		return nil, output.NewError(output.CodeBadConfig,
+			"missing required --payload JSON; a mutation takes its targeting from --payload, "+
+				"not --id/--id-type (those are lookup flags)", output.ExitUser)
 	}
 	var v interface{}
 	if err := json.Unmarshal([]byte(s), &v); err != nil {

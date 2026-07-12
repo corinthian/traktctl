@@ -19,12 +19,15 @@ Goal: human-friendly control over every traktctl surface. The user speaks intent
 
 Trakt is the **metadata/social/history** layer. It does NOT play anything. "Play this", "pause", "what's on my TV" → that belongs to whatever plays media, not this skill. Trakt answers "what is this", "what have I watched", "what's on my watchlist", "what's coming out", "what should I watch".
 
+**Requires traktctl ≥ 1.0.2.** The mutation contract this skill relies on — the `--id` guard, `NOT_APPLIED`/exit 6, `meta.partial`, scope-tagged `--llm` — does not exist in earlier binaries. **Before the first mutation of a session, run `traktctl --version`.** If it reports anything below 1.0.2, say so and stop: on 1.0.1 a mutation that changes nothing still returns `ok: true`, so a write that silently did nothing would be reported to the user as a success. That failure is invisible in the output — the version check is the only thing that catches it. Tell the user to upgrade; do not improvise mutations against the old contract, and do not fall back to hand-checking `added.*` counts. Reads are unaffected.
+
 ---
 
 ## Hard Rules
 
 - **Stay inside `traktctl`.** Never run `curl`, python/requests, or any direct call to `api.trakt.tv`. If a task seems to need a raw API call, that's a traktctl gap — tell the user it's a missing feature worth reporting, and stop. Don't work around it.
 - **Don't freeze flag names from memory — introspect.** This skill is written to the documented contract, not a running binary. For the *exact* flags, arg names, and output fields of any command, consult `traktctl <group> <verb> --llm` (JSON: usage, args, flags, examples, output_schema — a bare object, not the `{ok,data,meta}` envelope) or `traktctl commands` (the whole tree, JSON, `.data.subcommands[].name`, wrapped in the standard envelope). When a command errors on an unknown flag, check `--llm` rather than guessing again. The group/verb names below are stable; the fine-grain flags are authoritative only from `--llm`.
+- **Read `--llm` flags by scope.** Every flag in `--llm` output carries `scope: "local"` or `scope: "inherited"`. A command's own contract is its **local** flags. Inherited flags are ambient globals hoisted to the root — they exist on every command in the tree, which is not the same as being *read* by it. **Never build a mutation around an inherited flag.** `--id` and `--id-type` are inherited lookup flags: they appear under every mutation and are read by none of them.
 - **Don't invent limitations.** An `ok:true` empty result is not proof a feature is broken — a watchlist or search can genuinely be empty. Run the command, report plainly, let the user disambiguate. Treat a gap as real only if it's documented here or the user confirms it.
 - **Confirm before destructive writes.** See [Confirmation Gates](#confirmation-gates). The CLI requires `--confirm` on these; the *decision* to proceed is yours to get from the user first.
 - **Resolve titles, hide IDs.** Users say "Dune", not a trakt slug. Search to resolve, show a numbered list, act on the row they pick. Never make the user type or read a trakt ID. See [IDs & Row Numbers](#ids--row-numbers).
@@ -51,8 +54,18 @@ Default output of every traktctl command is the JSON envelope. **You** format it
 
 - **Lists** (search results, watchlist, history, calendar, recommendations) → the title table below.
 - **Single title** (a `get`) → a short labelled block: title, year, type, runtime, rating, one-line overview.
-- **Mutations** (add/remove/rate/follow) → a one-line confirmation: `Added Dune (2021) to your watchlist.`
+- **Mutations** (add/remove/rate/follow) → read the verdict off the envelope, don't re-derive it (see below).
 - **Counts/stats** (`user stats`) → a compact summary, not the raw object.
+
+### Mutation Verdicts
+
+The binary owns the verdict. **Never hand-check `added.*` / `deleted.*` counts to decide whether a write worked** — a zero add-count is often a correct success (an idempotent re-add of something already there). Read the envelope:
+
+| Envelope | Means | Say |
+|---|---|---|
+| `ok: true`, no `meta.partial` | everything applied — including idempotent re-adds and removes of things that weren't there | `Added Dune (2021) to your watchlist.` |
+| `ok: true` + `meta.partial: true` | some applied, some refused | report **both** halves and name the refused items from `meta.not_found` (add/remove) or `meta.skipped_ids` (reorder): `Added Dune — but I couldn't match "Doon", so that one didn't go in.` Never a bare "done." |
+| `ok: false`, code `NOT_APPLIED` | Trakt accepted the request and applied none of it | nothing changed — see [Error Handling](#error-handling) |
 
 ### Title Table
 
@@ -73,15 +86,29 @@ Every list of titles uses one shape. Add a leading `#` column; keep the `#`→ID
 
 ## IDs & Row Numbers
 
-Trakt identifies titles by `ids: {trakt, slug, imdb, tmdb, tvdb}`. traktctl takes `--id-type {trakt|slug|imdb|tmdb|tvdb}` + `--id VALUE` (defaults to `trakt`, no sniffing).
+Trakt identifies titles by `ids: {trakt, slug, imdb, tmdb, tvdb}`. **How you pass that id depends on whether you're reading or writing — this is the single most important distinction in the tool.**
 
 Workflow for "do X to <title>":
 1. `traktctl search query --type <movie|show> --q "<title>"` → resolve.
 2. Show the numbered title table; if one obvious match, you may proceed and name it.
-3. For the chosen row, use its slug (cleanest): `--id-type slug --id <slug>`.
+3. Pass the resolved id — **by the rule below, which differs for reads and mutations.**
 4. Report by name, never by ID.
 
-If the user supplies an explicit external ID ("the imdb is tt0468569"), pass `--id-type imdb --id tt0468569` directly — no search needed.
+**Reads take `--id`.** A `get`, a `search id`, a season/episode detail: `--id-type {trakt|slug|imdb|tmdb|tvdb}` + `--id VALUE` (defaults to `trakt`, no sniffing). Slug is cleanest: `--id-type slug --id gilda-1946`. If the user supplies an explicit external ID ("the imdb is tt0468569"), pass `--id-type imdb --id tt0468569` directly — no search needed.
+
+**Mutations take `--payload`. They have no `--id` path at all.** Every write — any `sync ... add`/`remove`, ratings, history, collection, watchlist, favorites, `settings`, `reorder`, and every `user list-*` write — takes its targeting *from the JSON body*. Build the body with the resolved ids inside it:
+
+```
+traktctl sync watchlist add --payload '{"movies":[{"ids":{"slug":"gilda-1946"}}]}'
+traktctl sync ratings  add --payload '{"movies":[{"rating":7,"ids":{"slug":"gilda-1946"}}]}'
+traktctl sync history  add --payload '{"movies":[{"watched_at":"2026-07-12T20:00:00.000Z","ids":{"slug":"gilda-1946"}}]}'
+```
+
+Per-verb value fields live *inside each item* (`rating`, `watched_at`), never as flags. Shows/seasons/episodes go in their own top-level keys (`"shows"`, `"episodes"`) — check `--llm` for the exact body shape of any verb you haven't run before.
+
+**Batch, don't loop.** Multiple titles go in one body as multiple items — one call, not N.
+
+**`--id` on a mutation is an error, by design.** It fails with `BAD_CONFIG: "this command ignores --id/--id-type"`. That error means *you built the call wrong — rebuild it with `--payload`*. It does **not** mean the user must supply something. Never relay it, never ask.
 
 ---
 
@@ -124,13 +151,18 @@ Translation:
 | `TRANSPORT_TIMEOUT` | `Can't reach Trakt right now — connection timed out.` |
 | `PARSE_ERROR` | `Trakt sent back something I couldn't read.` |
 | `PAGINATION_RUNAWAY` | `That's a huge pull (100+ pages). Want me to fetch all of it anyway?` (then add `--really-all`) |
+| `NOT_APPLIED` | `Trakt couldn't match {that title / any of those items} — nothing was changed.` Then re-resolve via `search` and offer the corrected match. |
 
-**`BAD_CONFIG` is a catch-all user-error code, not just "not set up."** It fires for at least three distinct cases — route by the `message` text, not one canned line:
-- Message starts `"missing required ..."` → a required flag is missing. Ask the user for that specific value; don't imply Trakt isn't configured.
+**`BAD_CONFIG` is a catch-all user-error code, not just "not set up."** It fires for at least four distinct cases — route by the `message` text, not one canned line:
+- Message starts `"this command ignores --id/--id-type"` → **the mutation guard fired: your call was malformed, not the user's request.** Rebuild it with `--payload` (see [IDs & Row Numbers](#ids--row-numbers)) and re-run silently. Never relay this, never ask the user for a value.
+- Message starts `"missing required --payload JSON"` → same class: build the payload body. Do **not** ask the user for a flag value.
+- Message starts `"missing required ..."` (anything else) → a required flag is missing. Ask the user for that specific value; don't imply Trakt isn't configured.
 - Message is `"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1"` → this is the confirmation gate firing (see [Confirmation Gates](#confirmation-gates)), not a real failure. Run the confirm flow, don't relay it as an error.
 - Message actually mentions config/credentials/client-id → offer `Trakt isn't set up yet — want to run setup?`
 
-Exit-code fallback when no code is parseable: 1 → bad request on my end, 2 → Trakt refused it, 3 → connection problem, 4 → traktctl bug, 5 → not signed in.
+**The confirm gate fires before the mutation guard.** On a destructive verb, a call carrying `--id` and no `--confirm` returns the *confirm* error first; the guard only appears on the retry that adds `--confirm`. That pair is **one** malformed invocation, not two separate problems — and the answer to the second error is still "rebuild with `--payload`." (You should never hit this: a correctly built mutation carries no `--id`.)
+
+Exit-code fallback when no code is parseable: 1 → bad request on my end, 2 → Trakt refused it, 3 → connection problem, 4 → traktctl bug, 5 → not signed in, 6 → Trakt accepted the request but applied none of it.
 
 **Auto-refresh is silent.** On a 401 the CLI refreshes once and retries; the data comes back normally with only a stderr note. Don't mention it unless debug.
 

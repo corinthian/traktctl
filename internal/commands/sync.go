@@ -212,7 +212,7 @@ func (a *App) syncPlayback() *cobra.Command {
 			if !a.confirmed() {
 				return output.NewError(output.CodeBadConfig, "destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
-			id, err := a.requireID()
+			id, err := a.requireTraktID()
 			if err != nil {
 				return err
 			}

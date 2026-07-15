@@ -60,7 +60,7 @@ func (a *App) recommendHide(use, short, prefix string) *cobra.Command {
 		Short:       short,
 		Annotations: map[string]string{"example_globals": "id"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := a.requireID()
+			id, err := a.requireTraktID()
 			if err != nil {
 				return err
 			}

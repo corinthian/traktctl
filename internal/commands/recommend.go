@@ -56,8 +56,9 @@ func (a *App) recommendList(use, short, path string) *cobra.Command {
 // recommendHide: DELETE <prefix>/{id} (auth). Idempotent, so no --confirm gate.
 func (a *App) recommendHide(use, short, prefix string) *cobra.Command {
 	c := &cobra.Command{
-		Use:   use,
-		Short: short,
+		Use:         use,
+		Short:       short,
+		Annotations: map[string]string{"example_globals": "id"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := a.requireID()
 			if err != nil {

@@ -205,8 +205,9 @@ func (a *App) syncPlayback() *cobra.Command {
 	c.AddCommand(get)
 
 	remove := &cobra.Command{
-		Use:   "remove",
-		Short: "Remove a playback item by id",
+		Use:         "remove",
+		Short:       "Remove a playback item by id",
+		Annotations: map[string]string{"example_globals": "id"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
 				return output.NewError(output.CodeBadConfig, "destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)

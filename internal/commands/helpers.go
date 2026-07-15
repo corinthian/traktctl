@@ -20,6 +20,25 @@ func (a *App) requireID() (string, error) {
 	return a.Flags.ID, nil
 }
 
+// requireTraktID returns the --id and rejects a non-trakt --id-type, for
+// endpoints that interpolate a bare trakt id into the path (recommend hide-*,
+// sync playback remove). Those neither honour nor validate --id-type today,
+// so `--id-type imdb --id tt0468569` silently builds a path Trakt 404s on
+// with no local hint the id-type was the problem.
+func (a *App) requireTraktID() (string, error) {
+	id, err := a.requireID()
+	if err != nil {
+		return "", err
+	}
+	if it := a.Flags.IDType; it != "" && it != "trakt" {
+		e := output.NewError(output.CodeBadConfig,
+			"this command takes a trakt id only; --id-type "+strconv.Quote(it)+" is unsupported here", output.ExitUser)
+		e.Hint = "resolve an external id first: `traktctl search id --id-type " + it + " --id " + id + "`"
+		return "", e
+	}
+	return id, nil
+}
+
 // validIDTypes is the full id-type enum accepted by Trakt's search/lookup.
 var validIDTypes = map[string]bool{
 	"trakt": true, "slug": true, "imdb": true, "tmdb": true, "tvdb": true,

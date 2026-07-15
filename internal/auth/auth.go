@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"sync"
@@ -22,6 +23,14 @@ type Manager struct {
 	store *store
 	http  *http.Client
 
+	// errW receives a loud, non-fatal warning when a refreshed token fails to
+	// persist (TC-10): the in-memory token is still set and the current
+	// command succeeds, but a per-invocation CLI loses that rotation at exit,
+	// and a refresh consumes the old refresh token at Trakt -- so a swallowed
+	// save error here silently kills auth until `auth login`. Defaults to
+	// os.Stderr; overridable for tests.
+	errW io.Writer
+
 	mu       sync.Mutex
 	tok      *Token
 	location string
@@ -34,6 +43,7 @@ func NewManager(cfg *config.Config) *Manager {
 		cfg:   cfg,
 		store: newStore(),
 		http:  &http.Client{Timeout: cfg.Timeout},
+		errW:  os.Stderr,
 	}
 }
 
@@ -111,8 +121,24 @@ func (m *Manager) Refresh(ctx context.Context) error {
 	m.tok = tok
 	if loc, serr := m.store.save(tok); serr == nil {
 		m.location = loc
+	} else {
+		warnPersistFailed(m.errW, "refreshed but the rotated token could not be persisted: "+
+			serr.Error()+"; the next command will use the now-invalid stored token -- re-run `traktctl auth login`.")
 	}
 	return nil
+}
+
+// warnPersistFailed emits TC-10's loud, non-fatal stderr warning when a
+// successfully-authorized or -refreshed token fails to persist: the running
+// command still succeeds (the token is set in memory), but a per-invocation
+// CLI loses that token at process exit, so silently swallowing the save
+// error was the wrong default for a security-critical credential. Falls back
+// to os.Stderr if w is nil (defensive; NewManager always sets it).
+func warnPersistFailed(w io.Writer, msg string) {
+	if w == nil {
+		w = os.Stderr
+	}
+	fmt.Fprintln(w, "[traktctl] WARNING: "+msg)
 }
 
 // DeviceCode is the response from POST /oauth/device/code.
@@ -143,9 +169,12 @@ func (m *Manager) LoginDevice(ctx context.Context, errW io.Writer, openBrowser b
 	m.mu.Lock()
 	m.tok = tok
 	m.loaded = true
-	loc, _ := m.store.save(tok)
+	loc, serr := m.store.save(tok)
 	m.location = loc
 	m.mu.Unlock()
+	if serr != nil {
+		warnPersistFailed(errW, "authorized but token could not be persisted: "+serr.Error()+"; re-run `traktctl auth login`.")
+	}
 	return tok, loc, nil
 }
 

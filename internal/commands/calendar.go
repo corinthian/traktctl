@@ -1,6 +1,10 @@
 package commands
 
-import "github.com/spf13/cobra"
+import (
+	"time"
+
+	"github.com/spf13/cobra"
+)
 
 func init() { Register(newCalendarCmd) }
 
@@ -37,6 +41,23 @@ func newCalendarCmd(app *App) *cobra.Command {
 	return root
 }
 
+// calendarPath builds the /calendars/{prefix}[/{start}[/{days}]] path. A
+// bare --days with no --start used to be silently dropped (TC-6); this
+// defaults start to today whenever days is set, so --days alone works.
+func calendarPath(prefix, start string, days int, today string) string {
+	if days > 0 && start == "" {
+		start = today
+	}
+	p := prefix
+	if start != "" {
+		p += "/" + start
+		if days > 0 {
+			p += "/" + itoa(days)
+		}
+	}
+	return p
+}
+
 func (a *App) calendarCmd(r calRow) *cobra.Command {
 	var start string
 	var days int
@@ -44,13 +65,7 @@ func (a *App) calendarCmd(r calRow) *cobra.Command {
 		Use:   r.use,
 		Short: r.short,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := "/calendars/" + r.path
-			if start != "" {
-				path += "/" + start
-				if days > 0 {
-					path += "/" + itoa(days)
-				}
-			}
+			path := calendarPath("/calendars/"+r.path, start, days, time.Now().Format("2006-01-02"))
 			res, err := a.get(path, a.baseOpts(r.auth))
 			if err != nil {
 				return err

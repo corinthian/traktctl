@@ -43,8 +43,9 @@ func newSearchCmd(app *App) *cobra.Command {
 
 	var idResultType string
 	byID := &cobra.Command{
-		Use:   "id",
-		Short: "Lookup by external id: GET /search/{id-type}/{id}",
+		Use:         "id",
+		Short:       "Lookup by external id: GET /search/{id-type}/{id}",
+		Annotations: map[string]string{"example_globals": "id,id-type"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := app.requireID()
 			if err != nil {

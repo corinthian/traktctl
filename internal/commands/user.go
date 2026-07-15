@@ -737,6 +737,9 @@ func (a *App) userListNoBodyWrite(use, short, suffix, method string) *cobra.Comm
 				return output.NewError(output.CodeBadConfig,
 					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
+			if idErr := rejectIDFlags(cmd); idErr != nil {
+				return idErr
+			}
 			prefix, err := a.listPrefix(user, listID)
 			if err != nil {
 				return err

@@ -88,6 +88,17 @@ func synthExamples(cmd *cobra.Command) []string {
 		return []string{path + " --help", path + " --llm"}
 	}
 	ex := path
+	// Inherited globals a command opts into surfacing — e.g. `search id` needs
+	// --id even though it is a root persistent flag. Without this, LocalFlags()
+	// (used below to keep --id out of payload writers) also hides it from the
+	// commands that require it. Comma-separated flag names.
+	if g := cmd.Annotations["example_globals"]; g != "" {
+		for _, name := range strings.Split(g, ",") {
+			if name = strings.TrimSpace(name); name != "" {
+				ex += " --" + name + " <" + name + ">"
+			}
+		}
+	}
 	// Append common flags with placeholder values, restricted to flags the
 	// command itself declares (LocalFlags) so inherited globals like --id
 	// don't leak into examples for commands that ignore them. Groups

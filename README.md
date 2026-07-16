@@ -31,16 +31,22 @@ The binary lands in `$(go env GOPATH)/bin` — make sure that's on your `PATH`. 
 From zero to authenticated. You need a Trakt application's `client_id`/`client_secret` from [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications).
 
 ```
-# 1. Write config + log in, in one shot:
-traktctl config init --client-id ID --client-secret SECRET --login
-#    Prints a device code + URL to stderr — open the URL, enter the code, approve.
+# 1. Keep the client secret in the environment, not on disk or in shell history:
+export TRAKT_CLIENT_SECRET=SECRET
+traktctl config init --client-id ID
 
-# 2. Confirm and make your first authenticated call:
+# 2. Log in, then make your first authenticated call:
+traktctl auth login
+#    Prints a device code + URL to stderr — open the URL, enter the code, approve.
 traktctl auth status
 traktctl user watchlist
 ```
 
+Prefer everything in one command? `traktctl config init --client-id ID --client-secret SECRET --login` writes the secret to `config.toml` and logs in immediately.
+
 Already have a `config.toml`? Just `traktctl auth login`. Tokens land in the macOS Keychain; the client refreshes them automatically on a 401. See [Authentication](#authentication) and [Bootstrap from scratch](#bootstrap-from-scratch) for the full lifecycle.
+
+The personal-scope commands (`user watchlist`, `user history`, and the rest of the `user` group without `--user`) return your own Trakt activity — treat that response data as personal, same as any other account export.
 
 ## Build
 
@@ -55,8 +61,8 @@ Requires Go 1.26+. No runtime dependencies.
 
 Resolution order (highest first): CLI flags > environment > `config.toml` > keychain.
 
-- `config.toml` is searched in `--config`, `$TRAKTCTL_CONFIG`, `./config.toml` (dev), then `~/.config/traktctl/config.toml`.
-- Tokens live in the macOS Keychain (service `traktctl`). File fallback: `./tokens.json` (dev) or `~/.config/traktctl/tokens.json`.
+- `config.toml` is searched in `--config`, then `$TRAKTCTL_CONFIG`, then `~/.config/traktctl/config.toml`. There is no cwd fallback — for a repo-local dev config, set `TRAKTCTL_CONFIG=./config.toml`.
+- Tokens live in the macOS Keychain (service `traktctl`). File fallback: `~/.config/traktctl/tokens.json` only (no cwd fallback).
 - Env: `TRAKT_CLIENT_ID`, `TRAKT_CLIENT_SECRET`, `TRAKT_ACCESS_TOKEN`, `TRAKT_REFRESH_TOKEN`, `TRAKT_BASE_URL`.
 
 Example `config.toml`:
@@ -164,7 +170,7 @@ go test -tags=live,refresh ./test/...  # adds the token-rotating refresh test
 
 ## Secrets
 
-`config.toml` holds the client secret; OAuth tokens live in the macOS Keychain (an on-disk `tokens.json` is only a dev fallback and is not present by default). Both `config.toml` and `tokens.json` are kept out of git via `.gitignore` — never commit them. For distribution, tokens belong in the keychain and the client secret in the environment.
+`config.toml` holds the client secret; OAuth tokens live in the macOS Keychain (an on-disk `~/.config/traktctl/tokens.json` is only a fallback for when the keychain is unavailable, e.g. CI/Linux, and is not present by default). Both files are kept out of git via `.gitignore` — never commit them. For distribution, tokens belong in the keychain and the client secret in the environment.
 
 ## Skill
 

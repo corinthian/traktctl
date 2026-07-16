@@ -58,6 +58,31 @@ func TestRequiredHeaders(t *testing.T) {
 	}
 }
 
+func TestRefusesCrossOriginRedirect(t *testing.T) {
+	var secondHit bool
+	var secondAuth string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secondHit = true
+		secondAuth = r.Header.Get("Authorization")
+		w.Write([]byte(`{"ok":1}`))
+	}))
+	defer target.Close()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/x", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL, &fakeTokens{bearer: "tok", has: true})
+	_, cerr := c.Do(context.Background(), http.MethodGet, "/x", Options{})
+	if cerr == nil {
+		t.Fatal("expected error for cross-origin redirect, got nil")
+	}
+	if secondHit {
+		t.Errorf("second-origin server was hit before the redirect was refused; Authorization=%q leaked", secondAuth)
+	}
+}
+
 func TestErrorMapping(t *testing.T) {
 	cases := []struct {
 		status int

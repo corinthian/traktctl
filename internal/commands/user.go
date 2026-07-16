@@ -241,7 +241,7 @@ func (a *App) userHidden() *cobra.Command {
 
 // hiddenWrite: POST /users/hidden/{section}{suffix} with --section --payload.
 func (a *App) hiddenWrite(use, short, suffix string) *cobra.Command {
-	var section, payload string
+	var section, payload, payloadFile string
 	c := &cobra.Command{
 		Use:   use,
 		Short: short,
@@ -256,7 +256,7 @@ func (a *App) hiddenWrite(use, short, suffix string) *cobra.Command {
 			if section == "" {
 				return output.NewError(output.CodeBadConfig, "missing required --section", output.ExitUser)
 			}
-			body, err := parsePayload(payload)
+			body, err := resolvePayload(payload, payloadFile)
 			if err != nil {
 				return err
 			}
@@ -271,6 +271,7 @@ func (a *App) hiddenWrite(use, short, suffix string) *cobra.Command {
 	}
 	c.Flags().StringVar(&section, "section", "", "hidden section")
 	c.Flags().StringVar(&payload, "payload", "", "request body as JSON")
+	c.Flags().StringVar(&payloadFile, "payload-file", "", "request body as JSON, read from a file (\"-\" for stdin); mutually exclusive with --payload")
 	return c
 }
 
@@ -635,7 +636,7 @@ func (a *App) userListCreate() *cobra.Command {
 // userListBodyWrite builds a /users/{id}{suffix} body mutation taking --payload
 // and optionally --list-id. Always confirm-gated.
 func (a *App) userListBodyWrite(use, short, suffix, method string, needListID bool) *cobra.Command {
-	var user, payload, listID string
+	var user, payload, payloadFile, listID string
 	c := &cobra.Command{
 		Use:   use,
 		Short: short,
@@ -656,7 +657,7 @@ func (a *App) userListBodyWrite(use, short, suffix, method string, needListID bo
 			} else {
 				path += suffix
 			}
-			body, err := parsePayload(payload)
+			body, err := resolvePayload(payload, payloadFile)
 			if err != nil {
 				return err
 			}
@@ -671,6 +672,7 @@ func (a *App) userListBodyWrite(use, short, suffix, method string, needListID bo
 	}
 	c.Flags().StringVar(&user, "user", "", "target username")
 	c.Flags().StringVar(&payload, "payload", "", "request body as JSON")
+	c.Flags().StringVar(&payloadFile, "payload-file", "", "request body as JSON, read from a file (\"-\" for stdin); mutually exclusive with --payload")
 	if needListID {
 		c.Flags().StringVar(&listID, "list-id", "", "list id")
 	}
@@ -761,7 +763,7 @@ func (a *App) userListNoBodyWrite(use, short, suffix, method string) *cobra.Comm
 // userListBodyWriteOptionalBody is like userListBodyWrite but the --payload is
 // optional (e.g. report, which may carry an optional reason body).
 func (a *App) userListBodyWriteOptionalBody(use, short, suffix, method string, needListID bool) *cobra.Command {
-	var user, payload, listID string
+	var user, payload, payloadFile, listID string
 	c := &cobra.Command{
 		Use:   use,
 		Short: short,
@@ -778,8 +780,8 @@ func (a *App) userListBodyWriteOptionalBody(use, short, suffix, method string, n
 				return err
 			}
 			opts := a.baseOpts(true)
-			if payload != "" {
-				body, perr := parsePayload(payload)
+			if payload != "" || payloadFile != "" {
+				body, perr := resolvePayload(payload, payloadFile)
 				if perr != nil {
 					return perr
 				}
@@ -794,12 +796,13 @@ func (a *App) userListBodyWriteOptionalBody(use, short, suffix, method string, n
 	}
 	bindUserList(c, &user, &listID)
 	c.Flags().StringVar(&payload, "payload", "", "optional request body as JSON")
+	c.Flags().StringVar(&payloadFile, "payload-file", "", "optional request body as JSON, read from a file (\"-\" for stdin); mutually exclusive with --payload")
 	return c
 }
 
 // userListItemUpdate: PUT /users/{id}/lists/{list_id}/items/{list_item_id}.
 func (a *App) userListItemUpdate() *cobra.Command {
-	var user, listID, listItemID, payload string
+	var user, listID, listItemID, payload, payloadFile string
 	c := &cobra.Command{
 		Use:   "list-item-update",
 		Short: "Update a single list item (destructive)",
@@ -818,7 +821,7 @@ func (a *App) userListItemUpdate() *cobra.Command {
 			if listItemID == "" {
 				return output.NewError(output.CodeBadConfig, "missing required --list-item-id", output.ExitUser)
 			}
-			body, perr := parsePayload(payload)
+			body, perr := resolvePayload(payload, payloadFile)
 			if perr != nil {
 				return perr
 			}
@@ -834,12 +837,13 @@ func (a *App) userListItemUpdate() *cobra.Command {
 	bindUserList(c, &user, &listID)
 	c.Flags().StringVar(&listItemID, "list-item-id", "", "list item id")
 	c.Flags().StringVar(&payload, "payload", "", "request body as JSON")
+	c.Flags().StringVar(&payloadFile, "payload-file", "", "request body as JSON, read from a file (\"-\" for stdin); mutually exclusive with --payload")
 	return c
 }
 
 // userReport: POST /users/{id}/report. Destructive.
 func (a *App) userReport() *cobra.Command {
-	var user, payload string
+	var user, payload, payloadFile string
 	c := &cobra.Command{
 		Use:   "report",
 		Short: "Report a user (destructive)",
@@ -855,8 +859,8 @@ func (a *App) userReport() *cobra.Command {
 				return output.NewError(output.CodeBadConfig, "missing required --user", output.ExitUser)
 			}
 			opts := a.baseOpts(true)
-			if payload != "" {
-				body, perr := parsePayload(payload)
+			if payload != "" || payloadFile != "" {
+				body, perr := resolvePayload(payload, payloadFile)
 				if perr != nil {
 					return perr
 				}
@@ -871,6 +875,7 @@ func (a *App) userReport() *cobra.Command {
 	}
 	c.Flags().StringVar(&user, "user", "", "target username")
 	c.Flags().StringVar(&payload, "payload", "", "optional request body as JSON")
+	c.Flags().StringVar(&payloadFile, "payload-file", "", "optional request body as JSON, read from a file (\"-\" for stdin); mutually exclusive with --payload")
 	return c
 }
 

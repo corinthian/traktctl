@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -16,18 +17,13 @@ const (
 )
 
 // store persists a Token. Primary: macOS Keychain via go-keyring. Fallback:
-// a JSON file (used on CI/Linux or when the keychain is unavailable, and for
-// the repo-root dev bootstrap tokens.json).
+// a JSON file (used on CI/Linux or when the keychain is unavailable).
 type store struct {
 	filePath string // resolved fallback file path
 }
 
-// newStore resolves the file-fallback path: ./tokens.json (dev bootstrap, if
-// present) else ~/.config/traktctl/tokens.json.
+// newStore resolves the file-fallback path: ~/.config/traktctl/tokens.json.
 func newStore() *store {
-	if st, err := os.Stat("tokens.json"); err == nil && !st.IsDir() {
-		return &store{filePath: "tokens.json"}
-	}
 	path := "tokens.json"
 	if dir, err := config.ConfigDir(); err == nil {
 		path = filepath.Join(dir, "tokens.json")
@@ -67,19 +63,26 @@ func (s *store) save(t *Token) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(s.filePath), 0o700); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(s.filePath, b, 0o600); err != nil {
+	if err := config.AtomicWriteFile(s.filePath, b); err != nil {
 		return "", err
 	}
 	return s.filePath, nil
 }
 
-// clear removes the token from both keychain and file fallback.
+// clear removes the token from both keychain and file fallback. A keychain
+// entry that was never there (ErrNotFound) is not a failure -- the goal state
+// (nothing stored) is already met -- but any other keychain error is surfaced
+// so a caller like Revoke doesn't report success while a stale token remains
+// readable. Both stores are attempted regardless of the other's outcome.
 func (s *store) clear() error {
-	_ = keyring.Delete(keyringService, keyringUser)
-	if err := os.Remove(s.filePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	var errs []error
+	if err := keyring.Delete(keyringService, keyringUser); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+		errs = append(errs, fmt.Errorf("keychain: %w", err))
 	}
-	return nil
+	if err := os.Remove(s.filePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		errs = append(errs, fmt.Errorf("file: %w", err))
+	}
+	return errors.Join(errs...)
 }
 
 var errNoToken = errors.New("no stored token")

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 
@@ -19,7 +20,7 @@ import (
 )
 
 // Version is the binary version, stamped into the User-Agent and help.
-const Version = "1.0.3"
+const Version = "1.1.0"
 
 // GlobalFlags holds the persistent flags bound on the root command.
 type GlobalFlags struct {
@@ -325,9 +326,47 @@ func parsePayload(s string) (interface{}, error) {
 			"missing required --payload JSON; a mutation takes its targeting from --payload, "+
 				"not --id/--id-type (those are lookup flags)", output.ExitUser)
 	}
+	return decodeJSON([]byte(s), "--payload")
+}
+
+// resolvePayload is the single entry point every payload-taking command uses:
+// exactly one of --payload / --payload-file may be set. --payload-file reads
+// from the named path, or stdin when the path is "-".
+func resolvePayload(payload, payloadFile string) (interface{}, error) {
+	if payload != "" && payloadFile != "" {
+		return nil, output.NewError(output.CodeBadConfig,
+			"--payload and --payload-file are mutually exclusive", output.ExitUser)
+	}
+	if payloadFile == "" {
+		return parsePayload(payload)
+	}
+	data, err := readPayloadFile(payloadFile)
+	if err != nil {
+		return nil, output.NewError(output.CodeBadConfig, "reading --payload-file: "+err.Error(), output.ExitUser)
+	}
+	if len(data) == 0 {
+		return nil, output.NewError(output.CodeBadConfig,
+			"missing required --payload/--payload-file JSON; a mutation takes its targeting from --payload, "+
+				"not --id/--id-type (those are lookup flags)", output.ExitUser)
+	}
+	return decodeJSON(data, "--payload-file")
+}
+
+// readPayloadFile reads path's contents, or stdin when path is "-".
+func readPayloadFile(path string) ([]byte, error) {
+	if path == "-" {
+		return io.ReadAll(os.Stdin)
+	}
+	return os.ReadFile(path)
+}
+
+// decodeJSON is the shared JSON decode behind both --payload and
+// --payload-file, with the source named in the error for a caller who mixed
+// up which one they used.
+func decodeJSON(data []byte, source string) (interface{}, error) {
 	var v interface{}
-	if err := json.Unmarshal([]byte(s), &v); err != nil {
-		return nil, output.NewError(output.CodeBadConfig, "invalid --payload JSON: "+err.Error(), output.ExitUser)
+	if err := json.Unmarshal(data, &v); err != nil {
+		return nil, output.NewError(output.CodeBadConfig, "invalid "+source+" JSON: "+err.Error(), output.ExitUser)
 	}
 	return v, nil
 }

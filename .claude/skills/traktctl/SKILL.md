@@ -106,6 +106,8 @@ traktctl sync history  add --payload '{"movies":[{"watched_at":"2026-07-12T20:00
 
 Per-verb value fields live *inside each item* (`rating`, `watched_at`), never as flags. Shows/seasons/episodes go in their own top-level keys (`"shows"`, `"episodes"`) — check `--llm` for the exact body shape of any verb you haven't run before.
 
+For a large or multi-line body, `--payload-file PATH` reads the JSON from a file instead (`-` for stdin). It's mutually exclusive with `--payload` — passing both is an error, not a silent pick-one.
+
 **Batch, don't loop.** Multiple titles go in one body as multiple items — one call, not N.
 
 **`--id` on a mutation is an error, by design.** It fails with `BAD_CONFIG: "this command ignores --id/--id-type"`. That error means *you built the call wrong — rebuild it with `--payload`*. It does **not** mean the user must supply something. Never relay it, never ask.

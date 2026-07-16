@@ -2,12 +2,13 @@
 
 // Package live is the live smoke suite (R7c). It exercises the compiled binary
 // and the live Trakt API using credentials resolved exactly as the production
-// CLI does — client_id/client_secret from config.toml (or TRAKT_CLIENT_ID /
-// TRAKT_CLIENT_SECRET), and the access token from the auth token store
-// (macOS Keychain, then ./tokens.json, then ~/.config/traktctl/tokens.json).
-// The whole suite t.Skip()s when credentials are absent, so it is a no-op on a
-// machine without creds. Excluded from the default `go test` by the `live`
-// build tag.
+// CLI does — client_id/client_secret from ~/.config/traktctl/config.toml (or
+// TRAKT_CLIENT_ID / TRAKT_CLIENT_SECRET env, or TRAKTCTL_CONFIG pointed at a
+// repo-local config.toml), and the access token from the auth token store
+// (macOS Keychain, then ~/.config/traktctl/tokens.json). There is no cwd
+// fallback for either file. The whole suite t.Skip()s when credentials are
+// absent, so it is a no-op on a machine without creds. Excluded from the
+// default `go test` by the `live` build tag.
 //
 //	go test -tags=live ./test/...
 //
@@ -61,14 +62,14 @@ type creds struct {
 }
 
 // loadCreds resolves credentials the same way the production CLI does: config
-// (file/env) for client_id/secret, the auth token store for the bearer. It
-// loads config relative to the repo root so config.toml/tokens.json in the repo
-// are found regardless of the test's working directory.
+// (env or ~/.config/traktctl) for client_id/secret, the auth token store
+// (keychain or ~/.config/traktctl/tokens.json) for the bearer. Neither
+// resolves against cwd, so the chdir below is only for consistency with run()
+// (which anchors the exec'd binary at the repo root) — it has no effect on
+// credential resolution.
 func loadCreds(t *testing.T) creds {
 	t.Helper()
 	root := repoRoot(t)
-	// config.Load and the token store both resolve ./config.toml and
-	// ./tokens.json relative to the process working directory, so anchor there.
 	restore := chdir(t, root)
 	defer restore()
 

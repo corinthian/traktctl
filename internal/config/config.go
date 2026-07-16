@@ -1,11 +1,13 @@
 // Package config resolves runtime configuration from, in precedence order:
-// CLI flags > environment > config.toml (cwd or ~/.config/traktctl) > keychain.
+// CLI flags > environment > config.toml (~/.config/traktctl) > keychain.
 // Token material (access/refresh) is layered separately by the auth package;
 // this package supplies client credentials, base URL, and defaults.
 package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -77,6 +79,9 @@ func Load(f Flags) (*Config, error) {
 	if c.BaseURL == "" {
 		c.BaseURL = defaultBaseURL
 	}
+	if err := validateBaseURL(c.BaseURL); err != nil {
+		return nil, err
+	}
 	c.Timeout = 30 * time.Second
 	if c.TimeoutStr != "" {
 		if d, err := time.ParseDuration(c.TimeoutStr); err == nil {
@@ -87,7 +92,7 @@ func Load(f Flags) (*Config, error) {
 }
 
 // resolveConfigPath returns the first existing config.toml: explicit flag,
-// $TRAKTCTL_CONFIG, ./config.toml (dev bootstrap), then ~/.config/traktctl.
+// $TRAKTCTL_CONFIG, then ~/.config/traktctl.
 func resolveConfigPath(explicit string) string {
 	candidates := []string{}
 	if explicit != "" {
@@ -96,7 +101,6 @@ func resolveConfigPath(explicit string) string {
 	if env := os.Getenv("TRAKTCTL_CONFIG"); env != "" {
 		candidates = append(candidates, env)
 	}
-	candidates = append(candidates, "config.toml")
 	if home, err := os.UserHomeDir(); err == nil {
 		candidates = append(candidates, filepath.Join(home, ".config", "traktctl", "config.toml"))
 	}
@@ -106,6 +110,41 @@ func resolveConfigPath(explicit string) string {
 		}
 	}
 	return ""
+}
+
+// validateBaseURL enforces the trust boundary on where API traffic can go:
+// https anywhere, or plain http only to loopback (for local dev/test servers).
+// Userinfo in the URL is rejected outright — it has no legitimate use here
+// and is a classic SSRF/credential-leak vector.
+func validateBaseURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid base_url %q: %w", raw, err)
+	}
+	if u.User != nil {
+		return fmt.Errorf("base_url %q must not contain userinfo", raw)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if isLoopbackHost(u.Hostname()) {
+			return nil
+		}
+		return fmt.Errorf("base_url %q must use https (http is only allowed for localhost/127.0.0.1/::1)", raw)
+	default:
+		return fmt.Errorf("base_url %q must use https or http", raw)
+	}
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 // FileConfig is the on-disk config.toml shape written by `config init`. Only
@@ -150,7 +189,7 @@ func WriteConfigFile(path string, fc FileConfig, force bool) error {
 	}
 	header := "# traktctl configuration — written by `traktctl config init`\n" +
 		"# Holds client_secret in plaintext; keep private (mode 0600).\n\n"
-	return os.WriteFile(path, append([]byte(header), b...), 0o600)
+	return AtomicWriteFile(path, append([]byte(header), b...))
 }
 
 // ConfigDir returns ~/.config/traktctl, creating it if needed.

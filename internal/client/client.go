@@ -62,7 +62,7 @@ func New(c Config) *Client {
 		lim = rate.NewLimiter(rate.Limit(c.RateLimit), 1)
 	}
 	return &Client{
-		http:      &http.Client{Timeout: c.Timeout},
+		http:      &http.Client{Timeout: c.Timeout, CheckRedirect: rejectCrossOriginRedirect},
 		baseURL:   strings.TrimRight(c.BaseURL, "/"),
 		clientID:  c.ClientID,
 		userAgent: "traktctl/" + c.Version,
@@ -70,6 +70,20 @@ func New(c Config) *Client {
 		limiter:   lim,
 		errW:      c.ErrW,
 	}
+}
+
+// rejectCrossOriginRedirect refuses to follow a redirect whose scheme or host
+// differs from the first request's, so a compromised/misconfigured Trakt
+// endpoint can't retarget the bearer token to an attacker-controlled origin.
+func rejectCrossOriginRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) == 0 {
+		return nil
+	}
+	first := via[0].URL
+	if req.URL.Scheme != first.Scheme || req.URL.Host != first.Host {
+		return fmt.Errorf("refusing cross-origin redirect: %s -> %s", first, req.URL)
+	}
+	return nil
 }
 
 // Options carries per-call request shaping.

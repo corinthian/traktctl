@@ -103,7 +103,9 @@ func newAuthCmd(app *App) *cobra.Command {
 					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
 			if err := app.Auth.Revoke(app.ctx()); err != nil {
-				return output.NewError(output.CodeBadConfig, "revoke failed: "+err.Error(), output.ExitInternal)
+				e := output.NewError(output.CodeBadConfig, "revoke failed: "+err.Error(), output.ExitInternal)
+				e.Hint = "the token was NOT cleared locally; retry, or run `traktctl auth logout` to clear it locally anyway"
+				return e
 			}
 			payload, _ := json.Marshal(map[string]bool{"revoked": true})
 			return app.Out.Emit(&output.Result{Data: payload, Terse: "Token revoked"})

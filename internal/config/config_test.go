@@ -105,6 +105,65 @@ func TestTimeoutParsing(t *testing.T) {
 	}
 }
 
+func TestResolveConfigPathIgnoresCwd(t *testing.T) {
+	clearTraktEnv(t)
+	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("client_id = \"cwd_id\"\n"), 0o600); err != nil {
+		t.Fatalf("write cwd config: %v", err)
+	}
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(origWD)
+
+	cfg, err := Load(Flags{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ClientID == "cwd_id" {
+		t.Error("cwd config.toml was loaded; it should be ignored")
+	}
+	if cfg.Source != "" {
+		t.Errorf("Source = %q, want empty (cwd ignored, no home config)", cfg.Source)
+	}
+}
+
+func TestLoadRejectsNonLoopbackHTTP(t *testing.T) {
+	clearTraktEnv(t)
+	t.Setenv("HOME", t.TempDir())
+	path := filepath.Join(t.TempDir(), "none.toml")
+	if _, err := Load(Flags{ConfigPath: path, BaseURL: "http://evil.example"}); err == nil {
+		t.Fatal("expected error for non-loopback http base_url")
+	}
+}
+
+func TestLoadAcceptsLoopbackHTTP(t *testing.T) {
+	clearTraktEnv(t)
+	t.Setenv("HOME", t.TempDir())
+	path := filepath.Join(t.TempDir(), "none.toml")
+	cfg, err := Load(Flags{ConfigPath: path, BaseURL: "http://127.0.0.1:9999"})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.BaseURL != "http://127.0.0.1:9999" {
+		t.Errorf("BaseURL = %q, want loopback URL preserved", cfg.BaseURL)
+	}
+}
+
+func TestLoadRejectsUserinfo(t *testing.T) {
+	clearTraktEnv(t)
+	t.Setenv("HOME", t.TempDir())
+	path := filepath.Join(t.TempDir(), "none.toml")
+	if _, err := Load(Flags{ConfigPath: path, BaseURL: "https://user:pass@api.trakt.tv"}); err == nil {
+		t.Fatal("expected error for base_url containing userinfo")
+	}
+}
+
 func TestWriteConfigFileRefusesOverwrite(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")

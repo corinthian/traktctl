@@ -194,7 +194,7 @@ func (a *App) idSuffixCmd(use, short, prefix, suffix, flagName, flagDefault, fla
 // postCmd builds a mutating POST command that takes a --payload JSON body.
 // When confirmRequired, it refuses without --confirm or TRAKTCTL_CONFIRM=1.
 func (a *App) postCmd(use, short, path string, confirmRequired bool) *cobra.Command {
-	var payload string
+	var payload, payloadFile string
 	c := &cobra.Command{
 		Use:   use,
 		Short: short,
@@ -206,7 +206,7 @@ func (a *App) postCmd(use, short, path string, confirmRequired bool) *cobra.Comm
 			if cerr := rejectIDFlags(cmd); cerr != nil {
 				return cerr
 			}
-			body, err := parsePayload(payload)
+			body, err := resolvePayload(payload, payloadFile)
 			if err != nil {
 				return err
 			}
@@ -220,13 +220,14 @@ func (a *App) postCmd(use, short, path string, confirmRequired bool) *cobra.Comm
 		},
 	}
 	c.Flags().StringVar(&payload, "payload", "", "request body as JSON")
+	c.Flags().StringVar(&payloadFile, "payload-file", "", "request body as JSON, read from a file (\"-\" for stdin); mutually exclusive with --payload")
 	return c
 }
 
 // putCmd builds a mutating PUT command taking a --payload JSON body. Always
 // confirm-gated (PUT here means replace settings/state).
 func (a *App) putCmd(use, short, path string, confirmRequired bool) *cobra.Command {
-	var payload string
+	var payload, payloadFile string
 	c := &cobra.Command{
 		Use:   use,
 		Short: short,
@@ -238,7 +239,7 @@ func (a *App) putCmd(use, short, path string, confirmRequired bool) *cobra.Comma
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
 			}
-			body, err := parsePayload(payload)
+			body, err := resolvePayload(payload, payloadFile)
 			if err != nil {
 				return err
 			}
@@ -252,13 +253,14 @@ func (a *App) putCmd(use, short, path string, confirmRequired bool) *cobra.Comma
 		},
 	}
 	c.Flags().StringVar(&payload, "payload", "", "request body as JSON")
+	c.Flags().StringVar(&payloadFile, "payload-file", "", "request body as JSON, read from a file (\"-\" for stdin); mutually exclusive with --payload")
 	return c
 }
 
 // putItemCmd builds `<use> --list-item-id ID --payload JSON`: PUT
 // <prefix>/{list_item_id}. Confirm-gated.
 func (a *App) putItemCmd(use, short, prefix string) *cobra.Command {
-	var payload, itemID string
+	var payload, payloadFile, itemID string
 	c := &cobra.Command{
 		Use:   use,
 		Short: short,
@@ -273,7 +275,7 @@ func (a *App) putItemCmd(use, short, prefix string) *cobra.Command {
 			if itemID == "" {
 				return output.NewError(output.CodeBadConfig, "missing required --list-item-id", output.ExitUser)
 			}
-			body, err := parsePayload(payload)
+			body, err := resolvePayload(payload, payloadFile)
 			if err != nil {
 				return err
 			}
@@ -288,5 +290,6 @@ func (a *App) putItemCmd(use, short, prefix string) *cobra.Command {
 	}
 	c.Flags().StringVar(&itemID, "list-item-id", "", "list item id")
 	c.Flags().StringVar(&payload, "payload", "", "request body as JSON")
+	c.Flags().StringVar(&payloadFile, "payload-file", "", "request body as JSON, read from a file (\"-\" for stdin); mutually exclusive with --payload")
 	return c
 }

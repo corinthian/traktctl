@@ -42,9 +42,23 @@ func NewManager(cfg *config.Config) *Manager {
 	return &Manager{
 		cfg:   cfg,
 		store: newStore(),
-		http:  &http.Client{Timeout: cfg.Timeout},
+		http:  &http.Client{Timeout: cfg.Timeout, CheckRedirect: rejectCrossOriginRedirect},
 		errW:  os.Stderr,
 	}
+}
+
+// rejectCrossOriginRedirect refuses to follow a redirect whose scheme or host
+// differs from the first request's, so the OAuth client_secret/tokens can't
+// be retargeted to an attacker-controlled origin via a redirect.
+func rejectCrossOriginRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) == 0 {
+		return nil
+	}
+	first := via[0].URL
+	if req.URL.Scheme != first.Scheme || req.URL.Host != first.Host {
+		return fmt.Errorf("refusing cross-origin redirect: %s -> %s", first, req.URL)
+	}
+	return nil
 }
 
 // ensureLoaded resolves the active token once: an explicit flag/env access
@@ -295,26 +309,40 @@ func (m *Manager) postToken(ctx context.Context, path string, body map[string]st
 	return &t, nil
 }
 
-// Revoke calls POST /oauth/revoke for the active access token, then clears
-// local storage.
+// Revoke calls POST /oauth/revoke for the active access token and clears
+// local storage only once Trakt confirms the revoke succeeded. RFC 7009
+// requires a 200 even for an already-invalid token, so a non-200 or transport
+// failure here means the remote token may still be live -- clearing local
+// state in that case would leave the user believing they are logged out when
+// they are not. On any failure, m.tok and the store are left untouched and the
+// error is returned so the caller can retry or fall back to `auth logout`.
 func (m *Manager) Revoke(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ensureLoaded()
-	if m.tok != nil && m.tok.AccessToken != "" {
-		body := map[string]string{
-			"token":         m.tok.AccessToken,
-			"client_id":     m.cfg.ClientID,
-			"client_secret": m.cfg.ClientSecret,
-		}
-		b, _ := json.Marshal(body)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.BaseURL+"/oauth/revoke", bytes.NewReader(b))
-		if err == nil {
-			req.Header.Set("Content-Type", "application/json")
-			if resp, derr := m.http.Do(req); derr == nil {
-				resp.Body.Close()
-			}
-		}
+	if m.tok == nil || m.tok.AccessToken == "" {
+		m.tok = nil
+		return m.store.clear()
+	}
+	body := map[string]string{
+		"token":         m.tok.AccessToken,
+		"client_id":     m.cfg.ClientID,
+		"client_secret": m.cfg.ClientSecret,
+	}
+	b, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.BaseURL+"/oauth/revoke", bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := m.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("revoke failed: HTTP %d", resp.StatusCode)
 	}
 	m.tok = nil
 	return m.store.clear()

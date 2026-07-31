@@ -261,10 +261,9 @@ func rejectIDFlags(cmd *cobra.Command) *output.CLIError {
 	if !cmd.Flags().Changed("id") && !cmd.Flags().Changed("id-type") {
 		return nil
 	}
-	return output.NewError(output.CodeBadConfig,
-		"this command ignores --id/--id-type; a mutation takes its targeting from --payload "+
-			`(e.g. --payload '{"movies":[{"ids":{"slug":"gilda-1946"}}]}')`,
-		output.ExitUser)
+	return output.UsageError(
+		"this command ignores --id/--id-type; a mutation takes its targeting from --payload " +
+			`(e.g. --payload '{"movies":[{"ids":{"slug":"gilda-1946"}}]}')`)
 }
 
 // baseOpts builds client.Options from the global list/pagination/extended flags.
@@ -322,9 +321,9 @@ func parsePayload(s string) (interface{}, error) {
 	if s == "" {
 		// Name the lookup-vs-mutation split here: this is the error a caller
 		// following the old (wrong) --id examples actually hits.
-		return nil, output.NewError(output.CodeBadConfig,
-			"missing required --payload JSON; a mutation takes its targeting from --payload, "+
-				"not --id/--id-type (those are lookup flags)", output.ExitUser)
+		return nil, output.UsageError(
+			"missing required --payload JSON; a mutation takes its targeting from --payload, " +
+				"not --id/--id-type (those are lookup flags)")
 	}
 	return decodeJSON([]byte(s), "--payload")
 }
@@ -334,20 +333,20 @@ func parsePayload(s string) (interface{}, error) {
 // from the named path, or stdin when the path is "-".
 func resolvePayload(payload, payloadFile string) (interface{}, error) {
 	if payload != "" && payloadFile != "" {
-		return nil, output.NewError(output.CodeBadConfig,
-			"--payload and --payload-file are mutually exclusive", output.ExitUser)
+		return nil, output.UsageError(
+			"--payload and --payload-file are mutually exclusive")
 	}
 	if payloadFile == "" {
 		return parsePayload(payload)
 	}
 	data, err := readPayloadFile(payloadFile)
 	if err != nil {
-		return nil, output.NewError(output.CodeBadConfig, "reading --payload-file: "+err.Error(), output.ExitUser)
+		return nil, output.UsageError("reading --payload-file: " + err.Error())
 	}
 	if len(data) == 0 {
-		return nil, output.NewError(output.CodeBadConfig,
-			"missing required --payload/--payload-file JSON; a mutation takes its targeting from --payload, "+
-				"not --id/--id-type (those are lookup flags)", output.ExitUser)
+		return nil, output.UsageError(
+			"missing required --payload/--payload-file JSON; a mutation takes its targeting from --payload, " +
+				"not --id/--id-type (those are lookup flags)")
 	}
 	return decodeJSON(data, "--payload-file")
 }
@@ -366,7 +365,7 @@ func readPayloadFile(path string) ([]byte, error) {
 func decodeJSON(data []byte, source string) (interface{}, error) {
 	var v interface{}
 	if err := json.Unmarshal(data, &v); err != nil {
-		return nil, output.NewError(output.CodeBadConfig, "invalid "+source+" JSON: "+err.Error(), output.ExitUser)
+		return nil, output.UsageError("invalid " + source + " JSON: " + err.Error())
 	}
 	return v, nil
 }

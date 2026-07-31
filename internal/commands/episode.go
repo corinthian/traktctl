@@ -32,13 +32,13 @@ func newEpisodeCmd(app *App) *cobra.Command {
 // episodeBase validates the three scope flags and returns the path prefix.
 func episodeBase(show, season, episode string) (string, error) {
 	if show == "" {
-		return "", output.NewError(output.CodeBadConfig, "missing required --show", output.ExitUser)
+		return "", output.UsageError("missing required --show")
 	}
 	if season == "" {
-		return "", output.NewError(output.CodeBadConfig, "missing required --season", output.ExitUser)
+		return "", output.UsageError("missing required --season")
 	}
 	if episode == "" {
-		return "", output.NewError(output.CodeBadConfig, "missing required --episode", output.ExitUser)
+		return "", output.UsageError("missing required --episode")
 	}
 	return "/shows/" + show + "/seasons/" + season + "/episodes/" + episode, nil
 }

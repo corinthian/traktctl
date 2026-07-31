@@ -33,8 +33,8 @@ func (a *App) configInit() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientID := a.Flags.ClientID
 			if clientID == "" {
-				return output.NewError(output.CodeBadConfig,
-					"missing required --client-id", output.ExitUser)
+				return output.UsageError(
+					"missing required --client-id")
 			}
 			baseURL := a.Flags.BaseURL
 			if baseURL == "" {
@@ -74,8 +74,8 @@ func (a *App) configInit() *cobra.Command {
 
 			if login {
 				if fc.ClientSecret == "" {
-					return output.NewError(output.CodeBadConfig,
-						"--login needs --client-secret for the device flow", output.ExitUser)
+					return output.UsageError(
+						"--login needs --client-secret for the device flow")
 				}
 				cfg := &config.Config{ClientID: clientID, ClientSecret: fc.ClientSecret, BaseURL: baseURL, Timeout: 30 * time.Second}
 				mgr := auth.NewManager(cfg)

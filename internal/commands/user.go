@@ -217,7 +217,7 @@ func (a *App) userHidden() *cobra.Command {
 		Short: "List hidden items in a section",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if getSection == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --section", output.ExitUser)
+				return output.UsageError("missing required --section")
 			}
 			opts := a.baseOpts(true)
 			if getType != "" {
@@ -254,7 +254,7 @@ func (a *App) hiddenWrite(use, short, suffix string) *cobra.Command {
 				return idErr
 			}
 			if section == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --section", output.ExitUser)
+				return output.UsageError("missing required --section")
 			}
 			body, err := resolvePayload(payload, payloadFile)
 			if err != nil {
@@ -406,7 +406,7 @@ func (a *App) userRatingsCmd() *cobra.Command {
 // and --list-id. Returns an error when --list-id is missing.
 func (a *App) listPrefix(user, listID string) (string, error) {
 	if listID == "" {
-		return "", output.NewError(output.CodeBadConfig, "missing required --list-id", output.ExitUser)
+		return "", output.UsageError("missing required --list-id")
 	}
 	return "/users/" + a.userTarget(user) + "/lists/" + listID, nil
 }
@@ -529,7 +529,7 @@ func (a *App) userFollow() *cobra.Command {
 					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
 			if user == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --user", output.ExitUser)
+				return output.UsageError("missing required --user")
 			}
 			path := "/users/" + user + "/follow"
 			var res *client.Result
@@ -563,7 +563,7 @@ func (a *App) userBlock() *cobra.Command {
 					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
 			if user == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --user", output.ExitUser)
+				return output.UsageError("missing required --user")
 			}
 			path := "/users/" + user + "/block"
 			var res *client.Result
@@ -597,7 +597,7 @@ func (a *App) userRequestsRespond() *cobra.Command {
 					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
 			}
 			if id == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --id (request id)", output.ExitUser)
+				return output.UsageError("missing required --id (request id)")
 			}
 			path := "/users/requests/" + id
 			var res *client.Result
@@ -651,7 +651,7 @@ func (a *App) userListBodyWrite(use, short, suffix, method string, needListID bo
 			path := "/users/" + a.userTarget(user)
 			if needListID {
 				if listID == "" {
-					return output.NewError(output.CodeBadConfig, "missing required --list-id", output.ExitUser)
+					return output.UsageError("missing required --list-id")
 				}
 				path += "/lists/" + listID + suffix
 			} else {
@@ -819,7 +819,7 @@ func (a *App) userListItemUpdate() *cobra.Command {
 				return err
 			}
 			if listItemID == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --list-item-id", output.ExitUser)
+				return output.UsageError("missing required --list-item-id")
 			}
 			body, perr := resolvePayload(payload, payloadFile)
 			if perr != nil {
@@ -856,7 +856,7 @@ func (a *App) userReport() *cobra.Command {
 				return idErr
 			}
 			if user == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --user", output.ExitUser)
+				return output.UsageError("missing required --user")
 			}
 			opts := a.baseOpts(true)
 			if payload != "" || payloadFile != "" {

@@ -37,9 +37,20 @@ func NewRoot() (*cobra.Command, *App) {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return cmd.Help()
+			if err := cmd.Help(); err != nil {
+				return output.NewError(output.CodeParseError, "writing help: "+err.Error(), output.ExitInternal)
+			}
+			return nil
 		},
 	}
+
+	// Flag parse failures (unknown flag, missing flag value, bad flag type)
+	// become typed usage errors at the parse layer, on the root and on every
+	// subcommand — cobra propagates the func down the tree.
+	root.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+		return output.UsageErrorHint(err.Error(),
+			"run `"+c.CommandPath()+" --help` for flags, or `--llm` for JSON help")
+	})
 
 	pf := root.PersistentFlags()
 	pf.StringVar(&g.ClientID, "client-id", "", "Trakt client_id (overrides env/config)")
@@ -81,14 +92,21 @@ func Execute() {
 	if err == nil {
 		return
 	}
+	os.Exit(int(app.Out.EmitError(classifyError(err))))
+}
+
+// classifyError types whatever Execute returned. Anything cobra hands back
+// that is not already a CLIError is a usage error: unknown command, unknown or
+// malformed flag, bad positional args. Every traktctl-internal failure path
+// returns a *output.CLIError (output.Emit types its own write failures), so
+// nothing else reaches the fallback.
+func classifyError(err error) *output.CLIError {
 	var cliErr *output.CLIError
 	if errors.As(err, &cliErr) {
-		os.Exit(int(app.Out.EmitError(cliErr)))
+		return cliErr
 	}
-	// Cobra-level errors (unknown command, bad flag) are user errors.
-	os.Exit(int(app.Out.EmitError(&output.CLIError{
-		Code: output.CodeBadConfig, Message: err.Error(), Exit: output.ExitUser,
-	})))
+	return output.UsageErrorHint(err.Error(),
+		"run `traktctl --help` or `traktctl commands` to list commands")
 }
 
 // newCommandsCmd implements `traktctl commands`: the full tree as JSON.

@@ -24,6 +24,14 @@ const (
 
 // Error-code enum values (the error envelope's `code` field).
 const (
+	// CodeBadRequest is the usage family: anything the caller typed wrong —
+	// unknown flag, unknown command, missing subcommand, missing/invalid
+	// required flag. Matches plexctl v2's BAD_REQUEST. Distinct from
+	// CodeBadConfig so a consumer routing on `error.code` sends a typo'd flag
+	// to usage help, not to config/auth troubleshooting.
+	CodeBadRequest = "BAD_REQUEST"
+	// CodeBadConfig is the config family only: an unreadable/invalid config
+	// file, a missing credential in env/config.toml. Never a usage error.
 	CodeBadConfig         = "BAD_CONFIG"
 	CodeAuthRequired      = "AUTH_REQUIRED"
 	CodeAuthExpired       = "AUTH_EXPIRED"
@@ -41,6 +49,55 @@ const (
 	// Distinct from TRAKT_NOT_FOUND, which is HTTP-404 semantics.
 	CodeNotApplied = "NOT_APPLIED"
 )
+
+// codeExit is the central code -> exit-class mapping: the one place the
+// pairing lives, so a new call site cannot invent its own exit number for an
+// existing code. A code absent from this map is a bug and exits ExitInternal.
+//
+// A few call sites still pass an explicit Exit that deliberately differs (an
+// operational failure reported under a config code, e.g. a failed revoke),
+// and an explicit non-zero Exit always wins — the map is the default, not a
+// veto. New code should prefer the constructors below.
+var codeExit = map[string]ExitCode{
+	CodeBadRequest:        ExitUser,
+	CodeBadConfig:         ExitUser,
+	CodePaginationRunaway: ExitUser,
+	CodeAuthRequired:      ExitAuthMissing,
+	CodeAuthExpired:       ExitTrakt,
+	CodeTraktNotFound:     ExitTrakt,
+	CodeTraktValidation:   ExitTrakt,
+	CodeTraktRateLimited:  ExitTrakt,
+	CodeTraktVIPOnly:      ExitTrakt,
+	CodeTraktLockedUser:   ExitTrakt,
+	CodeTraktDeactivated:  ExitTrakt,
+	CodeTraktServer:       ExitTrakt,
+	CodeTransportTimeout:  ExitTransport,
+	CodeParseError:        ExitInternal,
+	CodeNotApplied:        ExitNotApplied,
+}
+
+// ExitForCode returns the exit class an error code maps to. Unknown codes are
+// ExitInternal: emitting a code outside the enumeration is a traktctl bug.
+func ExitForCode(code string) ExitCode {
+	if e, ok := codeExit[code]; ok {
+		return e
+	}
+	return ExitInternal
+}
+
+// UsageError builds a usage-family (BAD_REQUEST) error for anything the caller
+// typed wrong. The exit class comes from codeExit, so no call site names an
+// exit number.
+func UsageError(msg string) *CLIError {
+	return &CLIError{Code: CodeBadRequest, Message: msg, Exit: ExitForCode(CodeBadRequest)}
+}
+
+// UsageErrorHint is UsageError with the recovery hint filled in.
+func UsageErrorHint(msg, hint string) *CLIError {
+	e := UsageError(msg)
+	e.Hint = hint
+	return e
+}
 
 // Envelope is the standard success/error wrapper.
 type Envelope struct {
@@ -141,21 +198,29 @@ type Result struct {
 // Emit renders a successful result per the configured format. An empty body
 // (e.g. HTTP 204) is normalized to nil so the JSON path emits `data:null`
 // rather than failing to marshal an empty RawMessage.
+// A write failure is returned as a typed CLIError so it stays inside the error
+// model: the caller's catch-all treats an untyped error as a usage error, and
+// a broken stdout is not the caller's typo.
 func (w *Writer) Emit(r *Result) error {
 	if len(r.Data) == 0 {
 		r.Data = nil
 	}
+	var err error
 	switch w.Format {
 	case FormatRaw:
-		return w.writeRaw(r.Data)
+		err = w.writeRaw(r.Data)
 	case FormatNDJSON:
-		return w.writeNDJSON(r.Data)
+		err = w.writeNDJSON(r.Data)
 	case FormatTerse:
-		return w.writeTerse(r)
+		err = w.writeTerse(r)
 	default:
 		env := Envelope{OK: true, Data: json.RawMessage(r.Data), Meta: r.Meta}
-		return w.writeJSON(env)
+		err = w.writeJSON(env)
 	}
+	if err != nil {
+		return NewError(CodeParseError, "writing output: "+err.Error(), ExitInternal)
+	}
+	return nil
 }
 
 // EmitError renders a CLIError as an error envelope and returns the exit code.
@@ -186,10 +251,12 @@ func (w *Writer) EmitError(e *CLIError) ExitCode {
 	return e.exitOrInternal()
 }
 
-// exitOrInternal guards against a zero-value Exit silently meaning success.
+// exitOrInternal guards against a zero-value Exit silently meaning success:
+// an error that never set one derives it from its code via the central map,
+// and an unmapped code lands on ExitInternal.
 func (e *CLIError) exitOrInternal() ExitCode {
 	if e.Exit == ExitOK {
-		return ExitInternal
+		return ExitForCode(e.Code)
 	}
 	return e.Exit
 }

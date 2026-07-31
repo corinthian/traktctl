@@ -44,8 +44,8 @@ func (a *App) seasonReport() *cobra.Command {
 		Short: "Report a season (destructive; requires --confirm)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if show == "" {
 				return output.UsageError("missing required --show")

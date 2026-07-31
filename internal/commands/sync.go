@@ -210,7 +210,7 @@ func (a *App) syncPlayback() *cobra.Command {
 		Annotations: map[string]string{"example_globals": "id"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig, "destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError("destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			id, err := a.requireTraktID()
 			if err != nil {

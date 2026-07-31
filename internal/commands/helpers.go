@@ -200,8 +200,8 @@ func (a *App) postCmd(use, short, path string, confirmRequired bool) *cobra.Comm
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if confirmRequired && !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if cerr := rejectIDFlags(cmd); cerr != nil {
 				return cerr
@@ -233,8 +233,8 @@ func (a *App) putCmd(use, short, path string, confirmRequired bool) *cobra.Comma
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if confirmRequired && !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
@@ -266,8 +266,8 @@ func (a *App) putItemCmd(use, short, prefix string) *cobra.Command {
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr

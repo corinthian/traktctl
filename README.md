@@ -152,7 +152,7 @@ The exit class is derived from `error.code`, never paired by hand:
 
 | code | exit | meaning |
 | --- | --- | --- |
-| `BAD_REQUEST` | 1 | usage: unknown flag, unknown command, missing subcommand, missing or invalid flag value |
+| `BAD_REQUEST` | 1 | usage: unknown flag, unknown command, missing subcommand, missing or invalid flag value, destructive call without `--confirm` |
 | `BAD_CONFIG` | 1 | configuration: unreadable config.toml, missing credential in env/config |
 | `PAGINATION_RUNAWAY` | 1 | `--all` hit the page cap; pass `--really-all` |
 | `AUTH_REQUIRED` | 5 | not logged in |

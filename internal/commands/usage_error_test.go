@@ -25,9 +25,11 @@ func decodeEnvelope(t *testing.T, e *output.CLIError) (output.Envelope, output.E
 	return env, code
 }
 
-// assertUsageEnvelope checks the full BAD_REQUEST contract: ok:false on
-// stdout, the usage code, exit 1, and a recovery hint.
-func assertUsageEnvelope(t *testing.T, shape string, err error) {
+// assertUsageEnvelope checks the BAD_REQUEST contract: ok:false on stdout, the
+// usage code, and exit 1. wantHint covers the shapes whose recovery is not
+// obvious from the message; the "missing required --X" guards name the flag in
+// the message itself and carry none.
+func assertUsageEnvelope(t *testing.T, shape string, err error, wantHint bool) {
 	t.Helper()
 	if err == nil {
 		t.Fatalf("%s: expected an error, got nil", shape)
@@ -46,7 +48,7 @@ func assertUsageEnvelope(t *testing.T, shape string, err error) {
 	if code != output.ExitUser {
 		t.Errorf("%s: exit = %d, want %d", shape, code, output.ExitUser)
 	}
-	if env.Error.Hint == "" {
+	if wantHint && env.Error.Hint == "" {
 		t.Errorf("%s: missing hint", shape)
 	}
 }
@@ -62,7 +64,7 @@ func TestUsageShapesAreBadRequest(t *testing.T) {
 		root.SetArgs([]string{"user", "ratings", "--json"})
 		root.SetOut(io.Discard)
 		root.SetErr(io.Discard)
-		assertUsageEnvelope(t, "unknown flag", root.Execute())
+		assertUsageEnvelope(t, "unknown flag", root.Execute(), true)
 	})
 
 	// Shape 2: unknown command.
@@ -71,7 +73,7 @@ func TestUsageShapesAreBadRequest(t *testing.T) {
 		root.SetArgs([]string{"version"})
 		root.SetOut(io.Discard)
 		root.SetErr(io.Discard)
-		assertUsageEnvelope(t, "unknown command", root.Execute())
+		assertUsageEnvelope(t, "unknown command", root.Execute(), true)
 	})
 
 	// Shape 3: missing subcommand. Driven through the hardened group's RunE
@@ -82,17 +84,18 @@ func TestUsageShapesAreBadRequest(t *testing.T) {
 		if err != nil {
 			t.Fatalf("could not find `user`: %v", err)
 		}
-		assertUsageEnvelope(t, "missing subcommand", cmd.RunE(cmd, nil))
+		assertUsageEnvelope(t, "missing subcommand", cmd.RunE(cmd, nil), true)
 	})
 
-	// Shape 4: missing required flag.
+	// Shape 4: missing required flag — the register's exemplar, `search query`
+	// without --q.
 	t.Run("missing required flag", func(t *testing.T) {
 		root, _ := NewRoot()
-		cmd, _, err := root.Find([]string{"search", "movie"})
+		cmd, _, err := root.Find([]string{"search", "query"})
 		if err != nil {
-			t.Fatalf("could not find `search movie`: %v", err)
+			t.Fatalf("could not find `search query`: %v", err)
 		}
-		assertUsageEnvelope(t, "missing required flag", runDirect(t, cmd, nil))
+		assertUsageEnvelope(t, "missing required flag", runDirect(t, cmd, []string{"--type", "movie"}), false)
 	})
 }
 
@@ -119,11 +122,12 @@ func TestGenuineConfigStaysBadConfig(t *testing.T) {
 	}
 }
 
-// TestConfirmGateUnchanged pins the confirm-gate refusal to BAD_CONFIG. It is
-// not one of BUG-2's four shapes and plexctl has no equivalent gate to match,
-// so the code is deliberately left alone; this test makes a future change to
-// it a decision rather than a side effect.
-func TestConfirmGateUnchanged(t *testing.T) {
+// TestConfirmGateIsBadRequest covers the confirm gate, which is not one of
+// BUG-2's four confirmed shapes but follows from the same rule: refusing a
+// destructive call that arrived without --confirm is a bad invocation, not a
+// config-file problem, and plexctl's enumeration puts "bad flags/args/
+// invocation" squarely in BAD_REQUEST.
+func TestConfirmGateIsBadRequest(t *testing.T) {
 	t.Setenv("TRAKTCTL_CONFIRM", "")
 	root, _ := NewRoot()
 	cmd, _, err := root.Find([]string{"sync", "collection", "remove"})
@@ -135,7 +139,7 @@ func TestConfirmGateUnchanged(t *testing.T) {
 	if !asCLIError(runErr, &cliErr) {
 		t.Fatalf("err type = %T (%v), want *output.CLIError", runErr, runErr)
 	}
-	if cliErr.Code != output.CodeBadConfig {
-		t.Errorf("confirm-gate code = %q, want %q (message: %s)", cliErr.Code, output.CodeBadConfig, cliErr.Message)
+	if cliErr.Code != output.CodeBadRequest {
+		t.Errorf("confirm-gate code = %q, want %q (message: %s)", cliErr.Code, output.CodeBadRequest, cliErr.Message)
 	}
 }

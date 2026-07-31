@@ -249,8 +249,8 @@ func (a *App) hiddenWrite(use, short, suffix string) *cobra.Command {
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
@@ -570,8 +570,8 @@ func (a *App) userFollow() *cobra.Command {
 		Short: "Follow a user (--unfollow to reverse; destructive)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if user == "" {
 				return output.UsageError("missing required --user")
@@ -604,8 +604,8 @@ func (a *App) userBlock() *cobra.Command {
 		Short: "Block a user (--unblock to reverse; destructive)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if user == "" {
 				return output.UsageError("missing required --user")
@@ -638,8 +638,8 @@ func (a *App) userRequestsRespond() *cobra.Command {
 		Short: "Approve (--approved) or deny a follower request (destructive)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if id == "" {
 				return output.UsageError("missing required --id (request id)")
@@ -687,8 +687,8 @@ func (a *App) userListBodyWrite(use, short, suffix, method string, needListID bo
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
@@ -781,8 +781,8 @@ func (a *App) userListNoBodyWrite(use, short, suffix, method string) *cobra.Comm
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
@@ -814,8 +814,8 @@ func (a *App) userListBodyWriteOptionalBody(use, short, suffix, method string, n
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
@@ -853,8 +853,8 @@ func (a *App) userListItemUpdate() *cobra.Command {
 		Short: "Update a single list item (destructive)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
@@ -894,8 +894,8 @@ func (a *App) userReport() *cobra.Command {
 		Short: "Report a user (destructive)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr

@@ -110,7 +110,7 @@ For a large or multi-line body, `--payload-file PATH` reads the JSON from a file
 
 **Batch, don't loop.** Multiple titles go in one body as multiple items — one call, not N.
 
-**`--id` on a mutation is an error, by design.** It fails with `BAD_CONFIG: "this command ignores --id/--id-type"`. That error means *you built the call wrong — rebuild it with `--payload`*. It does **not** mean the user must supply something. Never relay it, never ask.
+**`--id` on a mutation is an error, by design.** It fails with `"this command ignores --id/--id-type"` — code `BAD_REQUEST` on ≥ 1.2.0, `BAD_CONFIG` on older binaries. That error means *you built the call wrong — rebuild it with `--payload`*. It does **not** mean the user must supply something. Never relay it, never ask.
 
 ---
 
@@ -136,13 +136,14 @@ These verbs change real account state and the CLI requires `--confirm` (or `TRAK
 traktctl returns a structured error: `{ok:false, error:{code, message, http_status?, hint?}}` plus an exit code. `hint` is optional — it's populated for auth failures (`"Run: traktctl auth login"`) and some HTTP error bodies, but absent on most errors (including plain user mistakes). Don't expect one by default. **Do not show the raw object in default mode.**
 
 Translation:
-1. If the `code` is in the table below, show that line — except `BAD_CONFIG` (see the note below the table; it's a catch-all, not a single canned message).
+1. If the `code` is in the table below, show that line — except `BAD_REQUEST` and `BAD_CONFIG` (see the note below the table; both route by message, not one canned line).
 2. Otherwise, if `hint` is present, relay it in plain language — e.g. `"Run: traktctl auth login"` → `You're not signed in to Trakt — want me to start login?`. If there's no hint, say `Something went wrong with Trakt. Run with \`debug\` for details.`
 
 | Error code | Show user |
 |---|---|
 | `AUTH_REQUIRED` | `You're not signed in to Trakt. Want me to log you in?` |
 | `AUTH_EXPIRED` | `Your Trakt session expired and auto-refresh failed. Want me to log you in again?` |
+| `BAD_REQUEST` | *route by message — see below* |
 | `BAD_CONFIG` | *route by message — see below* |
 | `TRAKT_NOT_FOUND` | `Trakt doesn't have that one.` |
 | `TRAKT_VALIDATION` | `Trakt rejected that request — something about it wasn't valid.` |
@@ -155,7 +156,7 @@ Translation:
 | `PAGINATION_RUNAWAY` | `That's a huge pull (100+ pages). Want me to fetch all of it anyway?` (then add `--really-all`) |
 | `NOT_APPLIED` | `Trakt couldn't match {that title / any of those items} — nothing was changed.` Then re-resolve via `search` and offer the corrected match. |
 
-**`BAD_CONFIG` is a catch-all user-error code, not just "not set up."** It fires for at least four distinct cases — route by the `message` text, not one canned line:
+**Usage errors route by message text; the code depends on the binary version.** On ≥ 1.2.0 every usage error — unknown flag, unknown command, missing subcommand, missing required flag, the mutation guard, and the confirm-gate refusal — arrives as `BAD_REQUEST`, and `BAD_CONFIG` means a genuine config-file/env problem (unparseable config.toml, missing client credentials). On older binaries all of these arrive as `BAD_CONFIG`. Message texts are unchanged across versions, so the routing below works either way:
 - Message starts `"this command ignores --id/--id-type"` → **the mutation guard fired: your call was malformed, not the user's request.** Rebuild it with `--payload` (see [IDs & Row Numbers](#ids--row-numbers)) and re-run silently. Never relay this, never ask the user for a value.
 - Message starts `"missing required --payload JSON"` → same class: build the payload body. Do **not** ask the user for a flag value.
 - Message starts `"missing required ..."` (anything else) → a required flag is missing. Ask the user for that specific value; don't imply Trakt isn't configured.

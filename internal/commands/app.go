@@ -20,7 +20,7 @@ import (
 )
 
 // Version is the binary version, stamped into the User-Agent and help.
-const Version = "1.1.0"
+const Version = "1.2.0"
 
 // GlobalFlags holds the persistent flags bound on the root command.
 type GlobalFlags struct {

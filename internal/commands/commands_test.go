@@ -21,8 +21,8 @@ func TestValidateIDType(t *testing.T) {
 			t.Errorf("validateIDType(%q) = nil, want error", v)
 			continue
 		}
-		if err.Code != output.CodeBadConfig {
-			t.Errorf("validateIDType(%q) code = %q, want %q", v, err.Code, output.CodeBadConfig)
+		if err.Code != output.CodeBadRequest {
+			t.Errorf("validateIDType(%q) code = %q, want %q", v, err.Code, output.CodeBadRequest)
 		}
 		if err.Exit != output.ExitUser {
 			t.Errorf("validateIDType(%q) exit = %d, want %d", v, err.Exit, output.ExitUser)

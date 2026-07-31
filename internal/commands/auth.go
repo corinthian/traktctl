@@ -99,8 +99,8 @@ func newAuthCmd(app *App) *cobra.Command {
 		Short: "Revoke the token at Trakt and clear local storage",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !app.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if err := app.Auth.Revoke(app.ctx()); err != nil {
 				e := output.NewError(output.CodeBadConfig, "revoke failed: "+err.Error(), output.ExitInternal)

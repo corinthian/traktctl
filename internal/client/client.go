@@ -245,8 +245,7 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, opts Opt
 	for _, f := range opts.Filters {
 		k, v, ok := strings.Cut(f, "=")
 		if !ok {
-			return nil, &output.CLIError{Code: output.CodeBadConfig,
-				Message: "invalid --filter (want key=value): " + f, Exit: output.ExitUser}
+			return nil, output.UsageError("invalid --filter (want key=value): " + f)
 		}
 		q.Set(k, v)
 	}

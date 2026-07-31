@@ -3,6 +3,8 @@ package commands
 import (
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/corinthian/traktctl/internal/client"
 	"github.com/corinthian/traktctl/internal/output"
@@ -217,7 +219,7 @@ func (a *App) userHidden() *cobra.Command {
 		Short: "List hidden items in a section",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if getSection == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --section", output.ExitUser)
+				return output.UsageError("missing required --section")
 			}
 			opts := a.baseOpts(true)
 			if getType != "" {
@@ -247,14 +249,14 @@ func (a *App) hiddenWrite(use, short, suffix string) *cobra.Command {
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
 			}
 			if section == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --section", output.ExitUser)
+				return output.UsageError("missing required --section")
 			}
 			body, err := resolvePayload(payload, payloadFile)
 			if err != nil {
@@ -373,6 +375,52 @@ func (a *App) userHistoryCmd() *cobra.Command {
 	return c
 }
 
+// ratingTypes is the {type} path segment enum Trakt serves on the ratings
+// endpoint. A value outside it 500s upstream, so reject it locally.
+var ratingTypes = map[string]bool{
+	"movies": true, "shows": true, "seasons": true, "episodes": true, "all": true,
+}
+
+// ratingsPath builds GET /users/{id}/ratings[/{type}[/{rating}]].
+//
+// BUG-1: Trakt only honours the rating filter as a path segment *after* a type
+// segment, so `--rating 8` alone used to be parsed, dropped, and answered with
+// the full unfiltered set. The type segment defaults to "all" whenever a rating
+// is given — /users/{id}/ratings/all is byte-equivalent to the bare path, so
+// the default costs nothing and makes the filter reachable.
+//
+// Rating values are validated locally because Trakt does not: an out-of-range
+// segment (e.g. /ratings/all/11) returns HTTP 200 with an empty array, which a
+// caller cannot tell from "you have rated nothing 11". Comma-separated values
+// are supported — Trakt filters on the set (/ratings/all/8,9).
+func ratingsPath(target, typ, rating string) (string, *output.CLIError) {
+	path := "/users/" + target + "/ratings"
+	if rating != "" && typ == "" {
+		typ = "all"
+	}
+	if typ == "" {
+		return path, nil
+	}
+	if !ratingTypes[typ] {
+		return "", output.UsageErrorHint(
+			"invalid --type "+strconv.Quote(typ)+" for ratings",
+			"valid types: movies, shows, seasons, episodes, all")
+	}
+	path += "/" + typ
+	if rating == "" {
+		return path, nil
+	}
+	for _, part := range strings.Split(rating, ",") {
+		n, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || n < 1 || n > 10 {
+			return "", output.UsageErrorHint(
+				"invalid --rating "+strconv.Quote(rating)+"; ratings are 1-10",
+				"pass one value (--rating 8) or a comma-separated set (--rating 8,9,10)")
+		}
+	}
+	return path + "/" + rating, nil
+}
+
 // userRatingsCmd: GET /users/{id}/ratings[/{type}[/{rating}]].
 func (a *App) userRatingsCmd() *cobra.Command {
 	var user, typ, rating string
@@ -380,12 +428,9 @@ func (a *App) userRatingsCmd() *cobra.Command {
 		Use:   "ratings",
 		Short: "User ratings",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := "/users/" + a.userTarget(user) + "/ratings"
-			if typ != "" {
-				path += "/" + typ
-				if rating != "" {
-					path += "/" + rating
-				}
+			path, cerr := ratingsPath(a.userTarget(user), typ, rating)
+			if cerr != nil {
+				return cerr
 			}
 			res, err := a.get(path, a.baseOpts(true))
 			if err != nil {
@@ -395,8 +440,8 @@ func (a *App) userRatingsCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&user, "user", "", "target username")
-	c.Flags().StringVar(&typ, "type", "", "movies|shows|seasons|episodes")
-	c.Flags().StringVar(&rating, "rating", "", "filter by rating 1-10")
+	c.Flags().StringVar(&typ, "type", "", "movies|shows|seasons|episodes|all")
+	c.Flags().StringVar(&rating, "rating", "", "filter by rating 1-10 (comma-separated for a set, e.g. 8,9)")
 	return c
 }
 
@@ -406,7 +451,7 @@ func (a *App) userRatingsCmd() *cobra.Command {
 // and --list-id. Returns an error when --list-id is missing.
 func (a *App) listPrefix(user, listID string) (string, error) {
 	if listID == "" {
-		return "", output.NewError(output.CodeBadConfig, "missing required --list-id", output.ExitUser)
+		return "", output.UsageError("missing required --list-id")
 	}
 	return "/users/" + a.userTarget(user) + "/lists/" + listID, nil
 }
@@ -525,11 +570,11 @@ func (a *App) userFollow() *cobra.Command {
 		Short: "Follow a user (--unfollow to reverse; destructive)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if user == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --user", output.ExitUser)
+				return output.UsageError("missing required --user")
 			}
 			path := "/users/" + user + "/follow"
 			var res *client.Result
@@ -559,11 +604,11 @@ func (a *App) userBlock() *cobra.Command {
 		Short: "Block a user (--unblock to reverse; destructive)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if user == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --user", output.ExitUser)
+				return output.UsageError("missing required --user")
 			}
 			path := "/users/" + user + "/block"
 			var res *client.Result
@@ -593,11 +638,11 @@ func (a *App) userRequestsRespond() *cobra.Command {
 		Short: "Approve (--approved) or deny a follower request (destructive)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if id == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --id (request id)", output.ExitUser)
+				return output.UsageError("missing required --id (request id)")
 			}
 			path := "/users/requests/" + id
 			var res *client.Result
@@ -642,8 +687,8 @@ func (a *App) userListBodyWrite(use, short, suffix, method string, needListID bo
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
@@ -651,7 +696,7 @@ func (a *App) userListBodyWrite(use, short, suffix, method string, needListID bo
 			path := "/users/" + a.userTarget(user)
 			if needListID {
 				if listID == "" {
-					return output.NewError(output.CodeBadConfig, "missing required --list-id", output.ExitUser)
+					return output.UsageError("missing required --list-id")
 				}
 				path += "/lists/" + listID + suffix
 			} else {
@@ -736,8 +781,8 @@ func (a *App) userListNoBodyWrite(use, short, suffix, method string) *cobra.Comm
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
@@ -769,8 +814,8 @@ func (a *App) userListBodyWriteOptionalBody(use, short, suffix, method string, n
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
@@ -808,8 +853,8 @@ func (a *App) userListItemUpdate() *cobra.Command {
 		Short: "Update a single list item (destructive)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
@@ -819,7 +864,7 @@ func (a *App) userListItemUpdate() *cobra.Command {
 				return err
 			}
 			if listItemID == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --list-item-id", output.ExitUser)
+				return output.UsageError("missing required --list-item-id")
 			}
 			body, perr := resolvePayload(payload, payloadFile)
 			if perr != nil {
@@ -849,14 +894,14 @@ func (a *App) userReport() *cobra.Command {
 		Short: "Report a user (destructive)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
 			}
 			if user == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --user", output.ExitUser)
+				return output.UsageError("missing required --user")
 			}
 			opts := a.baseOpts(true)
 			if payload != "" || payloadFile != "" {

@@ -39,8 +39,8 @@ func TestRequireTraktID(t *testing.T) {
 		if !asCLIError(err, &cliErr) {
 			t.Fatalf("requireTraktID(%q) err type = %T, want *output.CLIError", ty, err)
 		}
-		if cliErr.Code != output.CodeBadConfig {
-			t.Errorf("requireTraktID(%q) code = %q, want %q", ty, cliErr.Code, output.CodeBadConfig)
+		if cliErr.Code != output.CodeBadRequest {
+			t.Errorf("requireTraktID(%q) code = %q, want %q", ty, cliErr.Code, output.CodeBadRequest)
 		}
 		if !strings.Contains(cliErr.Hint, "search id") {
 			t.Errorf("requireTraktID(%q) hint = %q, want mention of `search id`", ty, cliErr.Hint)
@@ -69,8 +69,8 @@ func TestRecommendHideRejectsNonTraktIDType(t *testing.T) {
 	if !asCLIError(runErr, &cliErr) {
 		t.Fatalf("recommend hide-movie --id 5 --id-type imdb err type = %T (%v), want *output.CLIError", runErr, runErr)
 	}
-	if cliErr.Code != output.CodeBadConfig {
-		t.Errorf("recommend hide-movie --id 5 --id-type imdb code = %q, want %q", cliErr.Code, output.CodeBadConfig)
+	if cliErr.Code != output.CodeBadRequest {
+		t.Errorf("recommend hide-movie --id 5 --id-type imdb code = %q, want %q", cliErr.Code, output.CodeBadRequest)
 	}
 }
 
@@ -105,8 +105,8 @@ func TestSyncPlaybackRemoveRejectsNonTraktIDType(t *testing.T) {
 	if !asCLIError(runErr, &cliErr) {
 		t.Fatalf("sync playback remove --id 5 --id-type imdb --confirm err type = %T (%v), want *output.CLIError", runErr, runErr)
 	}
-	if cliErr.Code != output.CodeBadConfig {
-		t.Errorf("sync playback remove --id 5 --id-type imdb --confirm code = %q, want %q", cliErr.Code, output.CodeBadConfig)
+	if cliErr.Code != output.CodeBadRequest {
+		t.Errorf("sync playback remove --id 5 --id-type imdb --confirm code = %q, want %q", cliErr.Code, output.CodeBadRequest)
 	}
 }
 

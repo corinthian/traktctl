@@ -19,10 +19,10 @@ func newSearchCmd(app *App) *cobra.Command {
 		Short: "Text search: GET /search/{type}?query=...",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if typ == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --type (movie|show|episode|person|list)", output.ExitUser)
+				return output.UsageError("missing required --type (movie|show|episode|person|list)")
 			}
 			if q == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --q (search text)", output.ExitUser)
+				return output.UsageError("missing required --q (search text)")
 			}
 			opts := app.baseOpts(false)
 			opts.Query = url.Values{"query": {q}}

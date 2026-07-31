@@ -44,14 +44,14 @@ func (a *App) seasonReport() *cobra.Command {
 		Short: "Report a season (destructive; requires --confirm)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if show == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --show", output.ExitUser)
+				return output.UsageError("missing required --show")
 			}
 			if season == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --season", output.ExitUser)
+				return output.UsageError("missing required --season")
 			}
 			res, err := a.post("/shows/"+show+"/seasons/"+season+"/report", a.baseOpts(true))
 			if err != nil {
@@ -75,12 +75,12 @@ func (a *App) showScoped(use, short, suffix string, needSeason, auth bool) *cobr
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if show == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --show", output.ExitUser)
+				return output.UsageError("missing required --show")
 			}
 			path := "/shows/" + show
 			if needSeason {
 				if season == "" {
-					return output.NewError(output.CodeBadConfig, "missing required --season", output.ExitUser)
+					return output.UsageError("missing required --season")
 				}
 				path += "/seasons/" + season + suffix
 			} else {
@@ -109,10 +109,10 @@ func (a *App) seasonTrailing(use, short, suffix, flagName, flagDefault, flagUsag
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if show == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --show", output.ExitUser)
+				return output.UsageError("missing required --show")
 			}
 			if season == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --season", output.ExitUser)
+				return output.UsageError("missing required --season")
 			}
 			path := "/shows/" + show + "/seasons/" + season + suffix
 			if val != "" {

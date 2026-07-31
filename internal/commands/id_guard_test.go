@@ -74,8 +74,8 @@ func TestUserListNoBodyWriteRejectsID(t *testing.T) {
 	if !asCLIError(runErr, &cliErr) {
 		t.Fatalf("user list-delete --id 5 --confirm err type = %T (%v), want *output.CLIError", runErr, runErr)
 	}
-	if cliErr.Code != output.CodeBadConfig {
-		t.Errorf("user list-delete --id 5 --confirm code = %q, want %q", cliErr.Code, output.CodeBadConfig)
+	if cliErr.Code != output.CodeBadRequest {
+		t.Errorf("user list-delete --id 5 --confirm code = %q, want %q", cliErr.Code, output.CodeBadRequest)
 	}
 }
 

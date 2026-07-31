@@ -45,9 +45,8 @@ func hardenGroup(cmd *cobra.Command) {
 	}
 	cmd.Args = cobra.NoArgs
 	cmd.RunE = func(c *cobra.Command, args []string) error {
-		e := output.NewError(output.CodeBadConfig,
-			"missing subcommand for `"+c.CommandPath()+"`", output.ExitUser)
-		e.Hint = "run `" + c.CommandPath() + " --help` to list subcommands, or `--llm` for JSON help"
-		return e
+		return output.UsageErrorHint(
+			"missing subcommand for `"+c.CommandPath()+"`",
+			"run `"+c.CommandPath()+" --help` to list subcommands, or `--llm` for JSON help")
 	}
 }

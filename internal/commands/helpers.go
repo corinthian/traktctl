@@ -15,7 +15,7 @@ func itoa(n int) string { return strconv.Itoa(n) }
 // requireID returns the global --id value or a user error if empty.
 func (a *App) requireID() (string, error) {
 	if strings.TrimSpace(a.Flags.ID) == "" {
-		return "", output.NewError(output.CodeBadConfig, "missing required --id", output.ExitUser)
+		return "", output.UsageError("missing required --id")
 	}
 	return a.Flags.ID, nil
 }
@@ -31,8 +31,8 @@ func (a *App) requireTraktID() (string, error) {
 		return "", err
 	}
 	if it := a.Flags.IDType; it != "" && it != "trakt" {
-		e := output.NewError(output.CodeBadConfig,
-			"this command takes a trakt id only; --id-type "+strconv.Quote(it)+" is unsupported here", output.ExitUser)
+		e := output.UsageError(
+			"this command takes a trakt id only; --id-type " + strconv.Quote(it) + " is unsupported here")
 		e.Hint = "resolve an external id first: `traktctl search id --id-type " + it + " --id " + id + "`"
 		return "", e
 	}
@@ -56,8 +56,8 @@ func validateIDType(idType string) *output.CLIError {
 	if idType == "" || validIDTypes[idType] {
 		return nil
 	}
-	e := output.NewError(output.CodeBadConfig,
-		"invalid --id-type "+strconv.Quote(idType), output.ExitUser)
+	e := output.UsageError(
+		"invalid --id-type " + strconv.Quote(idType))
 	e.Hint = "valid id types: trakt, slug, imdb, tmdb, tvdb"
 	return e
 }
@@ -76,8 +76,8 @@ func (a *App) requireLookupID() (string, error) {
 		idType = "trakt"
 	}
 	if !lookupIDTypes[idType] {
-		e := output.NewError(output.CodeBadConfig,
-			"--id-type "+strconv.Quote(idType)+" is not supported on this endpoint", output.ExitUser)
+		e := output.UsageError(
+			"--id-type " + strconv.Quote(idType) + " is not supported on this endpoint")
 		e.Hint = "this endpoint serves only trakt|slug|imdb ids; use `traktctl search id --id-type " +
 			idType + " --id " + id + "` to resolve an external id first"
 		return "", e
@@ -151,7 +151,7 @@ func (a *App) getStart(use, short, prefix string, auth bool) *cobra.Command {
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if start == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --start (YYYY-MM-DD)", output.ExitUser)
+				return output.UsageError("missing required --start (YYYY-MM-DD)")
 			}
 			res, err := a.get(prefix+"/"+start, a.baseOpts(auth))
 			if err != nil {
@@ -200,8 +200,8 @@ func (a *App) postCmd(use, short, path string, confirmRequired bool) *cobra.Comm
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if confirmRequired && !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if cerr := rejectIDFlags(cmd); cerr != nil {
 				return cerr
@@ -233,8 +233,8 @@ func (a *App) putCmd(use, short, path string, confirmRequired bool) *cobra.Comma
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if confirmRequired && !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
@@ -266,14 +266,14 @@ func (a *App) putItemCmd(use, short, prefix string) *cobra.Command {
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.confirmed() {
-				return output.NewError(output.CodeBadConfig,
-					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1", output.ExitUser)
+				return output.UsageError(
+					"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1")
 			}
 			if idErr := rejectIDFlags(cmd); idErr != nil {
 				return idErr
 			}
 			if itemID == "" {
-				return output.NewError(output.CodeBadConfig, "missing required --list-item-id", output.ExitUser)
+				return output.UsageError("missing required --list-item-id")
 			}
 			body, err := resolvePayload(payload, payloadFile)
 			if err != nil {

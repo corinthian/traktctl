@@ -3,6 +3,8 @@ package commands
 import (
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/corinthian/traktctl/internal/client"
 	"github.com/corinthian/traktctl/internal/output"
@@ -373,6 +375,52 @@ func (a *App) userHistoryCmd() *cobra.Command {
 	return c
 }
 
+// ratingTypes is the {type} path segment enum Trakt serves on the ratings
+// endpoint. A value outside it 500s upstream, so reject it locally.
+var ratingTypes = map[string]bool{
+	"movies": true, "shows": true, "seasons": true, "episodes": true, "all": true,
+}
+
+// ratingsPath builds GET /users/{id}/ratings[/{type}[/{rating}]].
+//
+// BUG-1: Trakt only honours the rating filter as a path segment *after* a type
+// segment, so `--rating 8` alone used to be parsed, dropped, and answered with
+// the full unfiltered set. The type segment defaults to "all" whenever a rating
+// is given — /users/{id}/ratings/all is byte-equivalent to the bare path, so
+// the default costs nothing and makes the filter reachable.
+//
+// Rating values are validated locally because Trakt does not: an out-of-range
+// segment (e.g. /ratings/all/11) returns HTTP 200 with an empty array, which a
+// caller cannot tell from "you have rated nothing 11". Comma-separated values
+// are supported — Trakt filters on the set (/ratings/all/8,9).
+func ratingsPath(target, typ, rating string) (string, *output.CLIError) {
+	path := "/users/" + target + "/ratings"
+	if rating != "" && typ == "" {
+		typ = "all"
+	}
+	if typ == "" {
+		return path, nil
+	}
+	if !ratingTypes[typ] {
+		return "", output.UsageErrorHint(
+			"invalid --type "+strconv.Quote(typ)+" for ratings",
+			"valid types: movies, shows, seasons, episodes, all")
+	}
+	path += "/" + typ
+	if rating == "" {
+		return path, nil
+	}
+	for _, part := range strings.Split(rating, ",") {
+		n, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || n < 1 || n > 10 {
+			return "", output.UsageErrorHint(
+				"invalid --rating "+strconv.Quote(rating)+"; ratings are 1-10",
+				"pass one value (--rating 8) or a comma-separated set (--rating 8,9,10)")
+		}
+	}
+	return path + "/" + rating, nil
+}
+
 // userRatingsCmd: GET /users/{id}/ratings[/{type}[/{rating}]].
 func (a *App) userRatingsCmd() *cobra.Command {
 	var user, typ, rating string
@@ -380,12 +428,9 @@ func (a *App) userRatingsCmd() *cobra.Command {
 		Use:   "ratings",
 		Short: "User ratings",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := "/users/" + a.userTarget(user) + "/ratings"
-			if typ != "" {
-				path += "/" + typ
-				if rating != "" {
-					path += "/" + rating
-				}
+			path, cerr := ratingsPath(a.userTarget(user), typ, rating)
+			if cerr != nil {
+				return cerr
 			}
 			res, err := a.get(path, a.baseOpts(true))
 			if err != nil {
@@ -395,8 +440,8 @@ func (a *App) userRatingsCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&user, "user", "", "target username")
-	c.Flags().StringVar(&typ, "type", "", "movies|shows|seasons|episodes")
-	c.Flags().StringVar(&rating, "rating", "", "filter by rating 1-10")
+	c.Flags().StringVar(&typ, "type", "", "movies|shows|seasons|episodes|all")
+	c.Flags().StringVar(&rating, "rating", "", "filter by rating 1-10 (comma-separated for a set, e.g. 8,9)")
 	return c
 }
 

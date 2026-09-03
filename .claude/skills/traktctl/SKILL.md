@@ -19,7 +19,7 @@ Goal: human-friendly control over every traktctl surface. The user speaks intent
 
 Trakt is the **metadata/social/history** layer. It does NOT play anything. "Play this", "pause", "what's on my TV" → that belongs to whatever plays media, not this skill. Trakt answers "what is this", "what have I watched", "what's on my watchlist", "what's coming out", "what should I watch".
 
-**Requires traktctl ≥ 1.0.2.** The mutation contract this skill relies on — the `--id` guard, `NOT_APPLIED`/exit 6, `meta.partial`, scope-tagged `--llm` — does not exist in earlier binaries. **Before the first mutation of a session, run `traktctl --version`.** If it reports anything below 1.0.2, say so and stop: on 1.0.1 a mutation that changes nothing still returns `ok: true`, so a write that silently did nothing would be reported to the user as a success. That failure is invisible in the output — the version check is the only thing that catches it. Tell the user to upgrade; do not improvise mutations against the old contract, and do not fall back to hand-checking `added.*` counts. Reads are unaffected.
+**Requires traktctl ≥ 1.2.0.** The mutation contract this skill relies on — the `--id` guard, `NOT_APPLIED`/exit 6, `meta.partial`, scope-tagged `--llm`, `BAD_REQUEST` for usage errors — is the 1.2.0 contract. **Before the first mutation of a session, run `traktctl --version`.** Below 1.2.0, say so and stop: older binaries can report a no-op write as `ok: true`, and nothing in the output reveals it. Tell the user to upgrade; do not improvise mutations against an older contract. Reads are unaffected.
 
 ---
 
@@ -27,7 +27,8 @@ Trakt is the **metadata/social/history** layer. It does NOT play anything. "Play
 
 - **Stay inside `traktctl`.** Never run `curl`, python/requests, or any direct call to `api.trakt.tv`. If a task seems to need a raw API call, that's a traktctl gap — tell the user it's a missing feature worth reporting, and stop. Don't work around it.
 - **Don't freeze flag names from memory — introspect.** This skill is written to the documented contract, not a running binary. For the *exact* flags, arg names, and output fields of any command, consult `traktctl <group> <verb> --llm` (JSON: usage, args, flags, examples, output_schema — a bare object, not the `{ok,data,meta}` envelope) or `traktctl commands` (the whole tree, JSON, `.data.subcommands[].name`, wrapped in the standard envelope). When a command errors on an unknown flag, check `--llm` rather than guessing again. The group/verb names below are stable; the fine-grain flags are authoritative only from `--llm`.
-- **Read `--llm` flags by scope.** Every flag in `--llm` output carries `scope: "local"` or `scope: "inherited"`. A command's own contract is its **local** flags. Inherited flags are ambient globals hoisted to the root — they exist on every command in the tree, which is not the same as being *read* by it. **Never build a mutation around an inherited flag.** `--id` and `--id-type` are inherited lookup flags: they appear under every mutation and are read by none of them.
+- **No `--json` flag.** Output is always JSON; `--json` is an unknown flag on every command.
+- **Read `--llm` flags by scope.** Every flag in `--llm` output carries `scope: "local"` or `scope: "inherited"`. A command's own contract is its **local** flags. Inherited flags are ambient globals hoisted to the root — they exist on every command in the tree, which is not the same as being *read* by it. **Never build a payload mutation around an inherited flag.** `--id` and `--id-type` are inherited lookup flags: they appear under every mutation and are read by none of them. This caution is about payload mutations; `config init` reads the inherited `--client-id`/`--client-secret` by design.
 - **Don't invent limitations.** An `ok:true` empty result is not proof a feature is broken — a watchlist or search can genuinely be empty. Run the command, report plainly, let the user disambiguate. Treat a gap as real only if it's documented here or the user confirms it.
 - **Confirm before destructive writes.** See [Confirmation Gates](#confirmation-gates). The CLI requires `--confirm` on these; the *decision* to proceed is yours to get from the user first.
 - **Resolve titles, hide IDs.** Users say "Dune", not a trakt slug. Search to resolve, show a numbered list, act on the row they pick. Never make the user type or read a trakt ID. See [IDs & Row Numbers](#ids--row-numbers).
@@ -104,13 +105,13 @@ traktctl sync ratings  add --payload '{"movies":[{"rating":7,"ids":{"slug":"gild
 traktctl sync history  add --payload '{"movies":[{"watched_at":"2026-07-12T20:00:00.000Z","ids":{"slug":"gilda-1946"}}]}'
 ```
 
-Per-verb value fields live *inside each item* (`rating`, `watched_at`), never as flags. Shows/seasons/episodes go in their own top-level keys (`"shows"`, `"episodes"`) — check `--llm` for the exact body shape of any verb you haven't run before.
-
 For a large or multi-line body, `--payload-file PATH` reads the JSON from a file instead (`-` for stdin). It's mutually exclusive with `--payload` — passing both is an error, not a silent pick-one.
+
+Per-verb value fields live *inside each item* (`rating`, `watched_at`), never as flags. Shows/seasons/episodes go in their own top-level keys (`"shows"`, `"episodes"`) — check `--llm` for the exact body shape of any verb you haven't run before.
 
 **Batch, don't loop.** Multiple titles go in one body as multiple items — one call, not N.
 
-**`--id` on a mutation is an error, by design.** It fails with `"this command ignores --id/--id-type"` — code `BAD_REQUEST` on ≥ 1.2.0, `BAD_CONFIG` on older binaries. That error means *you built the call wrong — rebuild it with `--payload`*. It does **not** mean the user must supply something. Never relay it, never ask.
+**`--id` on a mutation is an error, by design.** It fails with `"this command ignores --id/--id-type"` — code `BAD_REQUEST`. That error means *you built the call wrong — rebuild it with `--payload`*. It does **not** mean the user must supply something. Never relay it, never ask.
 
 ---
 
@@ -136,7 +137,7 @@ These verbs change real account state and the CLI requires `--confirm` (or `TRAK
 traktctl returns a structured error: `{ok:false, error:{code, message, http_status?, hint?}}` plus an exit code. `hint` is optional — it's populated for auth failures (`"Run: traktctl auth login"`) and some HTTP error bodies, but absent on most errors (including plain user mistakes). Don't expect one by default. **Do not show the raw object in default mode.**
 
 Translation:
-1. If the `code` is in the table below, show that line — except `BAD_REQUEST` and `BAD_CONFIG` (see the note below the table; both route by message, not one canned line).
+1. If the `code` is in the table below, show that line — except `BAD_REQUEST` (see the note below the table; it routes by message, not one canned line).
 2. Otherwise, if `hint` is present, relay it in plain language — e.g. `"Run: traktctl auth login"` → `You're not signed in to Trakt — want me to start login?`. If there's no hint, say `Something went wrong with Trakt. Run with \`debug\` for details.`
 
 | Error code | Show user |
@@ -144,7 +145,7 @@ Translation:
 | `AUTH_REQUIRED` | `You're not signed in to Trakt. Want me to log you in?` |
 | `AUTH_EXPIRED` | `Your Trakt session expired and auto-refresh failed. Want me to log you in again?` |
 | `BAD_REQUEST` | *route by message — see below* |
-| `BAD_CONFIG` | *route by message — see below* |
+| `BAD_CONFIG` | `Trakt isn't set up yet — want to run setup?` (a genuine config/credentials problem, never a usage error) |
 | `TRAKT_NOT_FOUND` | `Trakt doesn't have that one.` |
 | `TRAKT_VALIDATION` | `Trakt rejected that request — something about it wasn't valid.` |
 | `TRAKT_RATE_LIMITED` | `Trakt's rate-limiting me — give it a moment and try again.` |
@@ -156,12 +157,12 @@ Translation:
 | `PAGINATION_RUNAWAY` | `That's a huge pull (100+ pages). Want me to fetch all of it anyway?` (then add `--really-all`) |
 | `NOT_APPLIED` | `Trakt couldn't match {that title / any of those items} — nothing was changed.` Then re-resolve via `search` and offer the corrected match. |
 
-**Usage errors route by message text; the code depends on the binary version.** On ≥ 1.2.0 every usage error — unknown flag, unknown command, missing subcommand, missing required flag, the mutation guard, and the confirm-gate refusal — arrives as `BAD_REQUEST`, and `BAD_CONFIG` means a genuine config-file/env problem (unparseable config.toml, missing client credentials). On older binaries all of these arrive as `BAD_CONFIG`. Message texts are unchanged across versions, so the routing below works either way:
+**Usage errors route by message text.** Every usage error — unknown flag, unknown command, missing subcommand, missing required flag, the mutation guard, and the confirm-gate refusal — arrives as `BAD_REQUEST`. `BAD_CONFIG` means a genuine config-file/env problem (unparseable config.toml, missing client credentials). Route `BAD_REQUEST` by message:
 - Message starts `"this command ignores --id/--id-type"` → **the mutation guard fired: your call was malformed, not the user's request.** Rebuild it with `--payload` (see [IDs & Row Numbers](#ids--row-numbers)) and re-run silently. Never relay this, never ask the user for a value.
 - Message starts `"missing required --payload JSON"` → same class: build the payload body. Do **not** ask the user for a flag value.
 - Message starts `"missing required ..."` (anything else) → a required flag is missing. Ask the user for that specific value; don't imply Trakt isn't configured.
 - Message is `"destructive: pass --confirm or set TRAKTCTL_CONFIRM=1"` → this is the confirmation gate firing (see [Confirmation Gates](#confirmation-gates)), not a real failure. Run the confirm flow, don't relay it as an error.
-- Message actually mentions config/credentials/client-id → offer `Trakt isn't set up yet — want to run setup?`
+- Message actually mentions config/credentials/client-id **and the code is `BAD_CONFIG`** → offer `Trakt isn't set up yet — want to run setup?` (a `missing required --client-id` under `BAD_REQUEST` is a usage error — ask for that value, per the bullet above.)
 
 **The confirm gate fires before the mutation guard.** On a destructive verb, a call carrying `--id` and no `--confirm` returns the *confirm* error first; the guard only appears on the retry that adds `--confirm`. That pair is **one** malformed invocation, not two separate problems — and the answer to the second error is still "rebuild with `--payload`." (You should never hit this: a correctly built mutation carries no `--id`.)
 
@@ -198,7 +199,7 @@ Same shape (show adds episode-aware verbs). Discovery lists: `trending`, `popula
 
 **Recommendations always mean UNSEEN.** Any recommendation request — including curated/genre/era lists you assemble yourself (e.g. "recommend a noir from the 60s") — must exclude titles the user has already seen. The `recommend` endpoint does this for you. When you build a list from `search`/discovery/your own curation, cross-check it yourself and drop/flag the seen ones — don't hand back a list the user has mostly seen and ask afterward.
 
-**"Seen" = watched OR rated OR collected — union all three.** The watched history is incomplete: a title can be rated (proof it was seen) without a watched entry, and vice-versa. A watched-only check gives false "unseen" results. To test seen-status, pull `sync watched get`, `sync ratings get`, and (optionally) `sync collection get` for the type, union them, and match by title+year. A title in ANY of those three is seen.
+**"Seen" = watched OR rated — union both, never collection.** The watched history is incomplete: a title can be rated (proof it was seen) without a watched entry, and vice-versa, so a watched-only check gives false "unseen" results. Collection is an ownership record, not a viewing record — a collection-only match is UNSEEN and is never labelled a rewatch. To test seen-status, pull `sync watched get --all` and `sync ratings get --all` for the type (a round 100 or 1000 row count means you got page one, not the library), union them, and match by title+year. The `recommend` endpoint's own `--ignore-*` exclusions let partially-watched shows through; cross-check its output the same way.
 
 ### sync — personal data (reads + mutations)
 `activities` (cheap "has anything changed" poll). For `collection|history|ratings|watchlist|favorites`: `get` reads; `add` (idempotent, ungated) and `remove` (gated) mutate. Watchlist/favorites also have `settings`/`reorder`/`update-item` (all gated). `watched` is **read-only** (`get` only — it's a derived view; mutate seen-status via `sync history`). `playback` has `get` and `remove` (gated) only — there is no `playback add`. "Add Dune to my watchlist" → resolve, then `sync watchlist add` (no confirm needed). "Remove X from my history" → confirm first, then `sync history remove --confirm`.
@@ -230,6 +231,7 @@ On every `/traktctl` invocation, before parsing intent:
 2. For lessons with `seen: 3` or higher, treat them as **binding constraints** that override default behavior.
 3. For lessons with `seen: 1` or `2`, treat as **soft guidance**.
 4. Do not announce the recall.
+5. **Count the bodies under `## Active lessons` and run the [Synthesis Gate](#synthesis-gate).** Index rows don't count — only un-synthesized bodies.
 
 ### Reflection Triggers
 After any of these events, append a lesson:
@@ -249,13 +251,14 @@ Do NOT write lessons for:
 - Anything already documented in this file
 
 ### Lesson Format
-Append to LESSONS.md:
+Append to LESSONS.md under `## Active lessons`. Three frontmatter fields, four body lines, one line each — nothing else. Anything longer belongs in SKILL.md after synthesis, not here:
 
 ```
 ---
 trigger: <resolution|new-error|output|drift|correction>
 date: YYYY-MM-DD
 seen: 1
+declined: YYYY-MM-DD   # optional — only after a synthesis proposal was refused
 ---
 **Context:** <intent + command run>
 **Mistake:** <what traktctl did or returned, or what this file got wrong>
@@ -264,11 +267,19 @@ seen: 1
 ```
 
 ### Deduplication
-Before appending, scan existing LESSONS.md. If a lesson with the same `trigger` and substantively the same `Apply when` exists, increment its `seen` counter and update `date` instead of duplicating.
+Before appending, scan existing LESSONS.md — bodies *and* index rows. If a lesson with the same `trigger` and substantively the same `Apply when` exists, increment its `seen` counter and update `date` instead of duplicating. Same trigger but a different `Apply when` is a new lesson, not an increment.
 
-### Synthesis Threshold
-After writing or incrementing, count lessons sharing the same `trigger`:
-- **< 3 lessons** → no further action.
-- **≥ 3 lessons** → surface a synthesis proposal before continuing: "3+ lessons under `<trigger>`. Suggested SKILL.md edit: `<concrete change>`. Approve?" Wait for explicit approval — do NOT auto-edit SKILL.md. On approval: edit SKILL.md, mark the synthesized lessons `synthesized: true`, and collapse them to one index row (date, trigger, gist, destination).
+### Synthesis Gate
+Run this at **every invocation** (Startup Recall step 5), not only after writing a lesson. It is a counting rule, not a judgement call.
+
+1. Count the bodies under `## Active lessons`. Call that N. Count how many share each `trigger`.
+2. **If N ≥ 3, or any single `trigger` has ≥ 2 bodies** → synthesis is due. Open the reply with exactly one line before anything else:
+   `LESSONS: N active (drift ×a, correction ×b, …) — synthesis due`
+   Then answer the user's actual request as normal. Do not derail the turn.
+3. At the **end of that same turn**, propose the concrete SKILL.md edit: which section, which text, replaced by what. One proposal per lesson or per cluster. Wait for explicit approval — never auto-edit SKILL.md.
+4. On approval: make the SKILL.md edit, add one index row per synthesized lesson (date · trigger · one-line gist · destination section), and **delete the body**. Index rows are permanent — they are what `seen` counting keys off. The `## Active lessons` section is left genuinely empty.
+5. If N < 3 and every trigger has ≤ 1 body → no line, no proposal, carry on.
+
+A lesson that was proposed and declined stays a body with a `declined: YYYY-MM-DD` line added; it no longer counts toward the gate.
 
 No incident log for v1 — traktctl is stateless HTTP with no client-wedge telemetry worth tracking separately. If transport flakiness or rate-limiting becomes a recurring pattern, that's a `new-error` lesson, not a separate log.

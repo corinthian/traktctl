@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"testing"
 	"time"
@@ -167,5 +168,106 @@ func TestPaginateAll(t *testing.T) {
 	}
 	if len(arr) != 3 {
 		t.Errorf("expected 3 merged items across pages, got %d", len(arr))
+	}
+}
+
+// recordingServer counts requests and records the `page` param of each, so a
+// test can assert that a rejected request never left the process.
+func recordingServer(t *testing.T, pageCount string) (*httptest.Server, *[]string) {
+	t.Helper()
+	var pages []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		pages = append(pages, page)
+		w.Header().Set("X-Pagination-Page", page)
+		w.Header().Set("X-Pagination-Page-Count", pageCount)
+		w.Header().Set("X-Pagination-Item-Count", pageCount)
+		w.Write([]byte(`[{"p":` + page + `}]`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &pages
+}
+
+// TestFilterCannotOverridePaging: `page` is paginator-owned. Accepting
+// `--filter page=1` and then overwriting it left the flag doing nothing, or
+// silently fighting auto-pagination. It is now a usage error, rejected before
+// any request is issued.
+func TestFilterCannotOverridePaging(t *testing.T) {
+	srv, pages := recordingServer(t, "2")
+	c := newTestClient(t, srv.URL, &fakeTokens{})
+
+	_, cerr := c.Do(context.Background(), http.MethodGet, "/list",
+		Options{All: true, Filters: []string{"page=1"}})
+	if cerr == nil {
+		t.Fatal("--filter page=1 = nil error, want BAD_REQUEST")
+	}
+	if cerr.Code != output.CodeBadRequest {
+		t.Errorf("code = %q, want %q (message: %s)", cerr.Code, output.CodeBadRequest, cerr.Message)
+	}
+	if cerr.Exit != output.ExitUser {
+		t.Errorf("exit = %d, want %d", cerr.Exit, output.ExitUser)
+	}
+	if len(*pages) != 0 {
+		t.Errorf("requests issued = %v, want none", *pages)
+	}
+}
+
+// TestFilterLimitReserved: the same for the other paginator-owned key.
+func TestFilterLimitReserved(t *testing.T) {
+	srv, pages := recordingServer(t, "1")
+	c := newTestClient(t, srv.URL, &fakeTokens{})
+
+	_, cerr := c.Do(context.Background(), http.MethodGet, "/list",
+		Options{Filters: []string{"limit=5"}})
+	if cerr == nil {
+		t.Fatal("--filter limit=5 = nil error, want BAD_REQUEST")
+	}
+	if cerr.Code != output.CodeBadRequest {
+		t.Errorf("code = %q, want %q", cerr.Code, output.CodeBadRequest)
+	}
+	if len(*pages) != 0 {
+		t.Errorf("requests issued = %v, want none", *pages)
+	}
+}
+
+// TestNonReservedFilterStillApplies guards the blast radius: the reserved set
+// is exactly page and limit. `extended` is a display option, not paginator
+// state, and every genuine Trakt filter must still reach the query string.
+func TestNonReservedFilterStillApplies(t *testing.T) {
+	var got url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query()
+		w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv.URL, &fakeTokens{})
+
+	if _, cerr := c.Do(context.Background(), http.MethodGet, "/list",
+		Options{Filters: []string{"years=1999", "extended=full"}}); cerr != nil {
+		t.Fatalf("unexpected error: %v", cerr)
+	}
+	if got.Get("years") != "1999" {
+		t.Errorf("years = %q, want 1999", got.Get("years"))
+	}
+	if got.Get("extended") != "full" {
+		t.Errorf("extended = %q, want full", got.Get("extended"))
+	}
+}
+
+// TestMergedPaginationReportsFirstPage: a run started at --page 3 reports page
+// 3, not 1. The merged block described a window the caller never asked for.
+func TestMergedPaginationReportsFirstPage(t *testing.T) {
+	srv, _ := recordingServer(t, "3")
+	c := newTestClient(t, srv.URL, &fakeTokens{})
+
+	res, cerr := c.Do(context.Background(), http.MethodGet, "/list", Options{All: true, Page: 3})
+	if cerr != nil {
+		t.Fatalf("unexpected error: %v", cerr)
+	}
+	if res.Pagination == nil {
+		t.Fatal("merged result has no pagination block")
+	}
+	if res.Pagination.Page != 3 {
+		t.Errorf("merged Pagination.Page = %d, want 3", res.Pagination.Page)
 	}
 }

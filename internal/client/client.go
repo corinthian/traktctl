@@ -208,7 +208,10 @@ func (c *Client) doAll(ctx context.Context, path string, opts Options) (*Result,
 		page++
 	}
 	out, _ := json.Marshal(merged)
-	pag := &output.Pagination{Page: 1, Limit: limit, ItemCount: len(merged)}
+	// The merged result starts where the run started: firstPage(opts), not the
+	// mutated pageOpts. Reporting page 1 for a `--page 3 --all` run described a
+	// window the caller never asked for.
+	pag := &output.Pagination{Page: firstPage(opts), Limit: limit, ItemCount: len(merged)}
 	if lastPag != nil {
 		pag.PageCount = lastPag.PageCount
 		if lastPag.ItemCount > 0 {
@@ -225,6 +228,15 @@ func firstPage(opts Options) int {
 	return 1
 }
 
+// reservedFilterKeys are the query params the paginator owns. A --filter on one
+// of these used to be applied after the paginator set it, so `--filter page=2`
+// either did nothing or silently fought auto-pagination -- the same
+// accepted-and-ignored defect class as the dead `extended` key. `extended` is
+// deliberately not reserved: it is a display option, not paginator state.
+var reservedFilterKeys = map[string]bool{"page": true, "limit": true}
+
+// buildRequest is the single choke point for doOnce, doAll and every POST/PUT,
+// which is why the reserved-key check lives here rather than in Do.
 func (c *Client) buildRequest(ctx context.Context, method, path string, opts Options) (*http.Request, *output.CLIError) {
 	u := c.baseURL + path
 	q := url.Values{}
@@ -246,6 +258,9 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, opts Opt
 		k, v, ok := strings.Cut(f, "=")
 		if !ok {
 			return nil, output.UsageError("invalid --filter (want key=value): " + f)
+		}
+		if reservedFilterKeys[k] {
+			return nil, output.UsageError("--filter " + k + " is reserved; use --page/--limit")
 		}
 		q.Set(k, v)
 	}

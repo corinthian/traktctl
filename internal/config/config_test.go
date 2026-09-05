@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -32,8 +33,10 @@ func writeTempConfig(t *testing.T, body string) string {
 
 func TestLoadDefaultsBaseURL(t *testing.T) {
 	clearTraktEnv(t)
-	// Point at a non-existent explicit path so the cwd config.toml is skipped.
-	cfg, err := Load(Flags{ConfigPath: filepath.Join(t.TempDir(), "none.toml")})
+	// An empty config file: no base_url set, nothing else to resolve. (A
+	// non-existent explicit path is no longer a way to say "load nothing" --
+	// see TestLoadExplicitMissingPathErrors.)
+	cfg, err := Load(Flags{ConfigPath: writeTempConfig(t, "")})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -136,8 +139,7 @@ func TestResolveConfigPathIgnoresCwd(t *testing.T) {
 func TestLoadRejectsNonLoopbackHTTP(t *testing.T) {
 	clearTraktEnv(t)
 	t.Setenv("HOME", t.TempDir())
-	path := filepath.Join(t.TempDir(), "none.toml")
-	if _, err := Load(Flags{ConfigPath: path, BaseURL: "http://evil.example"}); err == nil {
+	if _, err := Load(Flags{BaseURL: "http://evil.example"}); err == nil {
 		t.Fatal("expected error for non-loopback http base_url")
 	}
 }
@@ -145,8 +147,7 @@ func TestLoadRejectsNonLoopbackHTTP(t *testing.T) {
 func TestLoadAcceptsLoopbackHTTP(t *testing.T) {
 	clearTraktEnv(t)
 	t.Setenv("HOME", t.TempDir())
-	path := filepath.Join(t.TempDir(), "none.toml")
-	cfg, err := Load(Flags{ConfigPath: path, BaseURL: "http://127.0.0.1:9999"})
+	cfg, err := Load(Flags{BaseURL: "http://127.0.0.1:9999"})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -158,8 +159,7 @@ func TestLoadAcceptsLoopbackHTTP(t *testing.T) {
 func TestLoadRejectsUserinfo(t *testing.T) {
 	clearTraktEnv(t)
 	t.Setenv("HOME", t.TempDir())
-	path := filepath.Join(t.TempDir(), "none.toml")
-	if _, err := Load(Flags{ConfigPath: path, BaseURL: "https://user:pass@api.trakt.tv"}); err == nil {
+	if _, err := Load(Flags{BaseURL: "https://user:pass@api.trakt.tv"}); err == nil {
 		t.Fatal("expected error for base_url containing userinfo")
 	}
 }
@@ -183,5 +183,97 @@ func TestWriteConfigFileRefusesOverwrite(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Errorf("config perms = %v, want 0600", info.Mode().Perm())
+	}
+}
+
+// TestLoadExplicitMissingPathErrors covers the behaviour break: a typo'd
+// --config used to exit 0, silently reading ~/.config/traktctl instead. The
+// command "worked" -- against the wrong account, with no way to notice.
+func TestLoadExplicitMissingPathErrors(t *testing.T) {
+	clearTraktEnv(t)
+	missing := filepath.Join(t.TempDir(), "nope.toml")
+	_, err := Load(Flags{ConfigPath: missing})
+	if err == nil {
+		t.Fatal("Load with a missing explicit --config = nil error, want a failure")
+	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Errorf("error = %q, want it to name the offending path %q", err, missing)
+	}
+	if !strings.Contains(err.Error(), "--config") {
+		t.Errorf("error = %q, want it to name --config as the source", err)
+	}
+}
+
+// TestLoadEnvConfigMissingPathErrors: TRAKTCTL_CONFIG is explicit too, and gets
+// the same authority (and the same failure) as the flag.
+func TestLoadEnvConfigMissingPathErrors(t *testing.T) {
+	clearTraktEnv(t)
+	missing := filepath.Join(t.TempDir(), "nope.toml")
+	t.Setenv("TRAKTCTL_CONFIG", missing)
+	_, err := Load(Flags{})
+	if err == nil {
+		t.Fatal("Load with a missing TRAKTCTL_CONFIG = nil error, want a failure")
+	}
+	if !strings.Contains(err.Error(), "TRAKTCTL_CONFIG") {
+		t.Errorf("error = %q, want it to name TRAKTCTL_CONFIG as the source", err)
+	}
+}
+
+// TestLoadExplicitDirectoryErrors: a directory stats fine but is not a config.
+func TestLoadExplicitDirectoryErrors(t *testing.T) {
+	clearTraktEnv(t)
+	if _, err := Load(Flags{ConfigPath: t.TempDir()}); err == nil {
+		t.Fatal("Load with --config pointing at a directory = nil error, want a failure")
+	}
+}
+
+// TestLoadReadErrorSurfaces: the path stat'd, so failing to read it is a real
+// problem. Discarding it yielded an empty config that failed much later as a
+// baffling "no client_id".
+func TestLoadReadErrorSurfaces(t *testing.T) {
+	clearTraktEnv(t)
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; mode 0000 is still readable")
+	}
+	path := writeTempConfig(t, "client_id = \"x\"\n")
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(path, 0o600) })
+
+	cfg, err := Load(Flags{ConfigPath: path})
+	if err == nil {
+		t.Fatalf("Load on an unreadable config = nil error (cfg.ClientID=%q), want a failure", cfg.ClientID)
+	}
+}
+
+// TestLoadDefaultMissingIsNotAnError is the other half of the rule: only the
+// explicit candidate is authoritative. With no flag and no env, an absent
+// ~/.config/traktctl/config.toml is normal -- env and flags may supply
+// everything.
+func TestLoadDefaultMissingIsNotAnError(t *testing.T) {
+	clearTraktEnv(t)
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := Load(Flags{})
+	if err != nil {
+		t.Fatalf("Load with no config anywhere = %v, want nil", err)
+	}
+	if cfg.Source != "" {
+		t.Errorf("Source = %q, want empty", cfg.Source)
+	}
+}
+
+// TestLoadEmptyEnvIsUnset: TRAKTCTL_CONFIG set but blank is unset, not an
+// explicit empty path. Otherwise `TRAKTCTL_CONFIG= traktctl ...` would fail.
+func TestLoadEmptyEnvIsUnset(t *testing.T) {
+	clearTraktEnv(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TRAKTCTL_CONFIG", "")
+	cfg, err := Load(Flags{})
+	if err != nil {
+		t.Fatalf("Load with an empty TRAKTCTL_CONFIG = %v, want nil", err)
+	}
+	if cfg.Source != "" {
+		t.Errorf("Source = %q, want empty", cfg.Source)
 	}
 }

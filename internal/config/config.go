@@ -5,6 +5,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -53,14 +54,23 @@ func Load(f Flags) (*Config, error) {
 	c := &Config{}
 
 	// 3. config file (lowest of the file/env/flag tiers handled here)
-	path := resolveConfigPath(f.ConfigPath)
+	path, _, err := resolveConfigPath(f.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
 	if path != "" {
-		if b, err := os.ReadFile(path); err == nil {
-			if err := toml.Unmarshal(b, c); err != nil {
-				return nil, err
-			}
-			c.Source = path
+		// The path came back only after a successful stat, so a read failure
+		// here is a real problem (permissions, a race, a bad mount) and must
+		// not be swallowed into an empty config that then fails much later
+		// as a confusing "no client_id".
+		b, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return nil, fmt.Errorf("reading config %s: %w", path, rerr)
 		}
+		if err := toml.Unmarshal(b, c); err != nil {
+			return nil, err
+		}
+		c.Source = path
 	}
 
 	// 2. environment overrides file
@@ -91,25 +101,51 @@ func Load(f Flags) (*Config, error) {
 	return c, nil
 }
 
-// resolveConfigPath returns the first existing config.toml: explicit flag,
-// $TRAKTCTL_CONFIG, then ~/.config/traktctl.
-func resolveConfigPath(explicit string) string {
-	candidates := []string{}
-	if explicit != "" {
-		candidates = append(candidates, explicit)
-	}
-	if env := os.Getenv("TRAKTCTL_CONFIG"); env != "" {
-		candidates = append(candidates, env)
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".config", "traktctl", "config.toml"))
-	}
-	for _, p := range candidates {
-		if st, err := os.Stat(p); err == nil && !st.IsDir() {
-			return p
+// resolveConfigPath resolves the config.toml to read and reports whether the
+// caller named it explicitly.
+//
+// An explicit path -- `--config`, or a non-empty TRAKTCTL_CONFIG -- is
+// authoritative: if it is missing or unstattable this returns an error rather
+// than quietly falling through to ~/.config/traktctl. A typo'd --config used to
+// exit 0 against the default config, which is the worst possible answer: the
+// command "worked", against the wrong account. An empty TRAKTCTL_CONFIG counts
+// as unset, not as an explicit empty path.
+//
+// Only the default candidate tolerates being absent -- env and flags may supply
+// everything a command needs.
+func resolveConfigPath(explicit string) (string, bool, error) {
+	path, source := explicit, "explicit --config path"
+	if path == "" {
+		if env := os.Getenv("TRAKTCTL_CONFIG"); env != "" {
+			path, source = env, "TRAKTCTL_CONFIG"
 		}
 	}
-	return ""
+
+	if path != "" {
+		st, err := os.Stat(path)
+		switch {
+		case err != nil && errors.Is(err, os.ErrNotExist):
+			if source == "TRAKTCTL_CONFIG" {
+				return "", true, fmt.Errorf("TRAKTCTL_CONFIG points at a missing file: %s", path)
+			}
+			return "", true, fmt.Errorf("explicit --config path does not exist: %s", path)
+		case err != nil:
+			return "", true, fmt.Errorf("%s is unreadable: %s: %w", source, path, err)
+		case st.IsDir():
+			return "", true, fmt.Errorf("%s is a directory, not a config file: %s", source, path)
+		}
+		return path, true, nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", false, nil
+	}
+	def := filepath.Join(home, ".config", "traktctl", "config.toml")
+	if st, serr := os.Stat(def); serr == nil && !st.IsDir() {
+		return def, false, nil
+	}
+	return "", false, nil
 }
 
 // validateBaseURL enforces the trust boundary on where API traffic can go:
@@ -167,9 +203,15 @@ func DefaultConfigPath() (string, error) {
 }
 
 // ResolvedConfigPath returns the path Load would read for the given explicit
-// --config value, or "" if none exists (used by `config path`).
-func ResolvedConfigPath(explicit string) string {
-	return resolveConfigPath(explicit)
+// --config value (or "" if none resolves) and whether the caller named a path
+// explicitly. Used by `config path`, which reports the resolution rather than
+// failing on it -- the error itself reaches that command via App.CfgErr.
+func ResolvedConfigPath(explicit string) (string, bool) {
+	path, isExplicit, err := resolveConfigPath(explicit)
+	if err != nil {
+		return "", isExplicit
+	}
+	return path, isExplicit
 }
 
 // WriteConfigFile writes fc to path (0600), creating parent dirs. It refuses to

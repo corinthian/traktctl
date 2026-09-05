@@ -30,6 +30,10 @@ func (a *App) configInit() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "init",
 		Short: "Write config.toml (credentials) for a fresh machine",
+		// `config init --config /new/path.toml` names a file that by
+		// definition does not exist yet; an authoritative explicit path would
+		// otherwise break the bootstrap command outright.
+		Annotations: map[string]string{tolerateBadConfig: "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientID := a.Flags.ClientID
 			if clientID == "" {
@@ -38,7 +42,7 @@ func (a *App) configInit() *cobra.Command {
 			}
 			baseURL := a.Flags.BaseURL
 			if baseURL == "" {
-				baseURL = "https://api.trakt.tv"
+				baseURL = defaultBaseURL
 			}
 			fc := config.FileConfig{
 				ClientID:     clientID,
@@ -104,8 +108,11 @@ func (a *App) configPath() *cobra.Command {
 	return &cobra.Command{
 		Use:   "path",
 		Short: "Show resolved config and token storage locations",
+		// The read-only diagnostic for exactly the failure an authoritative
+		// explicit path now produces. It reports the error; it does not become it.
+		Annotations: map[string]string{tolerateBadConfig: "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			resolved := config.ResolvedConfigPath(a.Flags.ConfigPath)
+			resolved, explicit := config.ResolvedConfigPath(a.Flags.ConfigPath)
 			def, _ := config.DefaultConfigPath()
 			_, tokenLoc := a.Auth.Token()
 			if tokenLoc == "" {
@@ -115,7 +122,14 @@ func (a *App) configPath() *cobra.Command {
 				"config_in_use":   resolved,
 				"config_default":  def,
 				"config_found":    resolved != "",
+				"config_explicit": explicit,
 				"token_stored_at": tokenLoc,
+			}
+			// The whole point of the tolerateBadConfig exemption: when the
+			// explicit path is the problem, this command is what tells you so,
+			// and it still exits 0 doing it.
+			if a.CfgErr != nil {
+				out["config_error"] = a.CfgErr.Message
 			}
 			// `config path` is the diagnostic you reach for when auth is
 			// behaving oddly, so an unreachable token store belongs here too.

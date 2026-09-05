@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/corinthian/traktctl/internal/auth"
 	"github.com/corinthian/traktctl/internal/client"
@@ -21,6 +22,10 @@ import (
 
 // Version is the binary version, stamped into the User-Agent and help.
 const Version = "1.2.0"
+
+// defaultBaseURL mirrors config's default. Used where a Config is built
+// without going through config.Load (config init, the tolerant build path).
+const defaultBaseURL = "https://api.trakt.tv"
 
 // GlobalFlags holds the persistent flags bound on the root command.
 type GlobalFlags struct {
@@ -55,7 +60,24 @@ type App struct {
 	Auth   *auth.Manager
 	Client *client.Client
 	Out    *output.Writer
+
+	// CfgErr holds a BAD_CONFIG failure that was tolerated rather than fatal,
+	// for the commands annotated tolerateBadConfig. Nil on the normal path.
+	CfgErr *output.CLIError
 }
+
+// tolerateBadConfig marks the commands that must still run when config
+// resolution fails. There are exactly two, and both are structural:
+//
+//   - `config path` is the read-only diagnostic you reach for to debug a bad
+//     config path. Hard-failing it removes the tool for the very problem it
+//     exists to report.
+//   - `config init --config /new/path.toml` names a file that does not exist
+//     yet, by definition.
+//
+// An annotated command continues against a minimal default Config so Auth and
+// Client still construct, with the error stashed on App.CfgErr.
+const tolerateBadConfig = "tolerate_bad_config"
 
 // NewApp builds an App with a default JSON writer; build() finishes setup in
 // PersistentPreRunE once flags are parsed.
@@ -79,6 +101,21 @@ func (a *App) build() *output.CLIError {
 	if err != nil {
 		return output.NewError(output.CodeBadConfig, "loading config: "+err.Error(), output.ExitUser)
 	}
+	a.wire(cfg)
+	return nil
+}
+
+// buildTolerant is build()'s fallback for a tolerateBadConfig command: keep the
+// config error for the command to report, and wire everything against minimal
+// defaults so the command body still has an Auth and a Client to talk to.
+func (a *App) buildTolerant(cerr *output.CLIError) {
+	a.CfgErr = cerr
+	a.wire(&config.Config{BaseURL: defaultBaseURL, Timeout: 30 * time.Second})
+}
+
+// wire is the shared construction step, so the tolerant path cannot drift from
+// the normal one (notably the output format, which --raw/--terse depend on).
+func (a *App) wire(cfg *config.Config) {
 	a.Cfg = cfg
 	a.Auth = auth.NewManager(cfg)
 	a.Client = client.New(client.Config{
@@ -90,7 +127,6 @@ func (a *App) build() *output.CLIError {
 		ErrW:     os.Stderr,
 	})
 	a.Out.Format = a.resolveFormat()
-	return nil
 }
 
 func (a *App) resolveFormat() output.Format {

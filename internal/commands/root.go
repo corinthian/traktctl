@@ -32,7 +32,13 @@ func NewRoot() (*cobra.Command, *App) {
 				return cerr
 			}
 			if cerr := app.build(); cerr != nil {
-				return cerr
+				// Two commands must survive an unusable config path: the
+				// diagnostic that reports it, and the bootstrap that creates
+				// the file. Everything else fails hard.
+				if cerr.Code != output.CodeBadConfig || cmd.Annotations[tolerateBadConfig] != "true" {
+					return cerr
+				}
+				app.buildTolerant(cerr)
 			}
 			return nil
 		},

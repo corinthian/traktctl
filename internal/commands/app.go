@@ -303,9 +303,18 @@ func rejectIDFlags(cmd *cobra.Command) *output.CLIError {
 }
 
 // baseOpts builds client.Options from the global list/pagination/extended flags.
+//
+// `extended` in config.toml was a dead key: it parsed, it appeared in `config
+// path`, and nothing ever read it. The flag still wins; the file is the
+// fallback. The a.Cfg nil check is load-bearing, not defensive — several tests
+// build an App from flags alone, without going through build().
 func (a *App) baseOpts(auth bool) client.Options {
+	extended := a.Flags.Extended
+	if extended == "" && a.Cfg != nil {
+		extended = a.Cfg.Extended
+	}
 	return client.Options{
-		Extended:  a.Flags.Extended,
+		Extended:  extended,
 		Filters:   a.Flags.Filters,
 		Page:      a.Flags.Page,
 		Limit:     a.Flags.Limit,

@@ -191,6 +191,24 @@ type FileConfig struct {
 	DefaultUser  string `toml:"default_user,omitempty"`
 	BaseURL      string `toml:"base_url,omitempty"`
 	Extended     string `toml:"extended,omitempty"`
+	// Timeout mirrors Config.TimeoutStr. `config init` never sets it, but it
+	// belongs in the shape so `--force` can carry a hand-edited value forward
+	// instead of silently discarding it.
+	Timeout string `toml:"timeout,omitempty"`
+}
+
+// ReadFileConfig parses an existing config.toml into the on-disk shape. Used by
+// `config init --force` to carry forward the fields it does not itself write.
+func ReadFileConfig(path string) (FileConfig, error) {
+	var fc FileConfig
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return fc, err
+	}
+	if err := toml.Unmarshal(b, &fc); err != nil {
+		return fc, err
+	}
+	return fc, nil
 }
 
 // DefaultConfigPath returns ~/.config/traktctl/config.toml (does not create it).

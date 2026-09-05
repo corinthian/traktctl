@@ -133,12 +133,20 @@ func (m *Manager) HasToken() bool {
 	return m.tok != nil && m.tok.RefreshToken != ""
 }
 
-// Token returns a copy of the active token and its storage location.
+// Token returns a copy of the active token and its storage location. A copy,
+// not the pointer: the doc comment always said so, but handing out m.tok let a
+// caller mutate the Manager's live credential under its own mutex. Every
+// current caller only reads, which is exactly why this was worth closing
+// before one of them did not.
 func (m *Manager) Token() (*Token, string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ensureLoaded()
-	return m.tok, m.location
+	if m.tok == nil {
+		return nil, m.location
+	}
+	cp := *m.tok
+	return &cp, m.location
 }
 
 // Refresh exchanges the refresh token for a new access token and persists it.

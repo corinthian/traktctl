@@ -2,6 +2,9 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/corinthian/traktctl/internal/auth"
@@ -59,6 +62,20 @@ func (a *App) configInit() *cobra.Command {
 					return output.NewError(output.CodeBadConfig, "resolving config path: "+err.Error(), output.ExitInternal)
 				}
 				path = p
+			}
+			// `config init --force` rewrites the file from flags, and `timeout`
+			// is the one field nothing on this command can supply — so without
+			// this it is silently dropped on every re-init. A read failure is
+			// not fatal: --force means overwrite, and the timeout falls back to
+			// the 30s default.
+			if force {
+				switch prev, rerr := config.ReadFileConfig(path); {
+				case rerr == nil:
+					fc.Timeout = prev.Timeout
+				case !errors.Is(rerr, os.ErrNotExist):
+					fmt.Fprintln(a.Out.Err, "[traktctl] WARNING: could not read the existing config at "+
+						path+" to carry its timeout forward ("+rerr.Error()+"); it will be dropped.")
+				}
 			}
 			if err := config.WriteConfigFile(path, fc, force); err != nil {
 				return output.NewError(output.CodeBadConfig, err.Error(), output.ExitUser)

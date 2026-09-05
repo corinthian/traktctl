@@ -67,17 +67,23 @@ func newAuthCmd(app *App) *cobra.Command {
 		Short: "Show token state (local only)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			tok, loc := app.Auth.Token()
+			// A load failure that is not "nothing stored" (locked keychain,
+			// unreadable tokens.json) reads identically to "not logged in"
+			// without this: same authenticated:false, same AUTH_REQUIRED on
+			// the next call, and no way to tell the two apart.
+			out := map[string]interface{}{"authenticated": tok != nil}
+			if lerr := app.Auth.LoadError(); lerr != nil {
+				out["load_error"] = lerr.Error()
+			}
 			if tok == nil {
-				payload, _ := json.Marshal(map[string]interface{}{"authenticated": false})
+				payload, _ := json.Marshal(out)
 				return app.Out.Emit(&output.Result{Data: payload, Terse: "Not logged in"})
 			}
-			payload, _ := json.Marshal(map[string]interface{}{
-				"authenticated": true,
-				"stored_at":     loc,
-				"scope":         tok.Scope,
-				"expired":       tok.Expired(),
-				"expires_at":    tok.ExpiresAt().UTC().Format("2006-01-02T15:04:05Z"),
-			})
+			out["stored_at"] = loc
+			out["scope"] = tok.Scope
+			out["expired"] = tok.Expired()
+			out["expires_at"] = tok.ExpiresAt().UTC().Format("2006-01-02T15:04:05Z")
+			payload, _ := json.Marshal(out)
 			return app.Out.Emit(&output.Result{Data: payload})
 		},
 	})

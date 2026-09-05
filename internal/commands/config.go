@@ -117,6 +117,11 @@ func (a *App) configPath() *cobra.Command {
 				"config_found":    resolved != "",
 				"token_stored_at": tokenLoc,
 			}
+			// `config path` is the diagnostic you reach for when auth is
+			// behaving oddly, so an unreachable token store belongs here too.
+			if lerr := a.Auth.LoadError(); lerr != nil {
+				out["token_load_error"] = lerr.Error()
+			}
 			payload, _ := json.Marshal(out)
 			return a.Out.Emit(&output.Result{Data: payload})
 		},

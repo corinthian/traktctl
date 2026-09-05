@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,6 +36,14 @@ type Manager struct {
 	tok      *Token
 	location string
 	loaded   bool
+
+	// loadErr holds a token-load failure that is NOT "nothing stored" -- a
+	// locked or otherwise unreadable keychain, say. Unauthenticated reads must
+	// keep working, so this never fails a command; but it is the difference
+	// between "you are not logged in" and "your credentials exist and traktctl
+	// cannot reach them", which is what a user debugging a surprise
+	// AUTH_REQUIRED needs to be told.
+	loadErr error
 }
 
 // NewManager builds a token manager. Tokens are loaded lazily on first use.
@@ -80,9 +89,29 @@ func (m *Manager) ensureLoaded() {
 		m.location = "flag/env"
 		return
 	}
-	if t, loc, err := m.store.load(); err == nil {
+	t, loc, err := m.store.load()
+	if err == nil {
 		m.tok, m.location = t, loc
+		return
 	}
+	// errNoToken is the ordinary "never logged in" case and stays silent.
+	// Anything else is a real failure to reach stored credentials: record it
+	// for LoadError() and say so once on stderr.
+	if !errors.Is(err, errNoToken) {
+		m.loadErr = err
+		warn(m.errW, "could not read the stored token: "+err.Error()+
+			"; commands needing auth will report AUTH_REQUIRED until this is resolved.")
+	}
+}
+
+// LoadError returns the non-fatal token-load failure, if any. nil means either
+// a token loaded cleanly or none was stored -- `auth status` and `config path`
+// use it to distinguish those from an unreachable keychain.
+func (m *Manager) LoadError() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ensureLoaded()
+	return m.loadErr
 }
 
 // Bearer returns the current access token, or "" if none is available.
@@ -148,7 +177,12 @@ func (m *Manager) Refresh(ctx context.Context) error {
 // CLI loses that token at process exit, so silently swallowing the save
 // error was the wrong default for a security-critical credential. Falls back
 // to os.Stderr if w is nil (defensive; NewManager always sets it).
-func warnPersistFailed(w io.Writer, msg string) {
+func warnPersistFailed(w io.Writer, msg string) { warn(w, msg) }
+
+// warn is the shared stderr warning channel for this package's non-fatal
+// failures (persist, token load, store reconciliation). Falls back to
+// os.Stderr if w is nil.
+func warn(w io.Writer, msg string) {
 	if w == nil {
 		w = os.Stderr
 	}

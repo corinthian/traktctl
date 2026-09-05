@@ -87,6 +87,8 @@ func NewRoot() (*cobra.Command, *App) {
 
 	addAll(root, app)
 	root.AddCommand(newCommandsCmd(app))
+	// After the tree is complete, so root and `commands` are covered too.
+	harden(root)
 	return root, app
 }
 

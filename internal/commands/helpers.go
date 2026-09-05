@@ -85,6 +85,46 @@ func (a *App) requireLookupID() (string, error) {
 	return id, nil
 }
 
+// validateSortFlags enforces the two rules the sort path segments imply.
+//
+// Trakt has no `all` sort path -- sort orders exist only per type -- so unlike
+// --rating there is nothing to default to here, and an incomplete pair cannot
+// be salvaged. Both flags were previously dropped in silence whenever --type
+// was absent or only one of the two was given, so `--sort-by rank` came back
+// looking like it had sorted.
+func validateSortFlags(typ, sortBy, sortHow string) *output.CLIError {
+	if sortBy == "" && sortHow == "" {
+		return nil
+	}
+	if sortBy == "" || sortHow == "" {
+		return output.UsageErrorHint(
+			"--sort-by and --sort-how must be given together",
+			"e.g. --sort-by rank --sort-how asc")
+	}
+	if typ == "" {
+		return output.UsageErrorHint(
+			"--sort-by/--sort-how need --type",
+			"Trakt sorts per type; e.g. --type movies --sort-by rank --sort-how asc")
+	}
+	return nil
+}
+
+// validateRating checks a --rating value: one integer 1-10, or a
+// comma-separated set of them. Trakt does not validate this itself -- an
+// out-of-range segment returns HTTP 200 with an empty array, which a caller
+// cannot tell from "you have rated nothing 11".
+func validateRating(rating string) *output.CLIError {
+	for _, part := range strings.Split(rating, ",") {
+		n, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || n < 1 || n > 10 {
+			return output.UsageErrorHint(
+				"invalid --rating "+strconv.Quote(rating)+"; ratings are 1-10",
+				"pass one value (--rating 8) or a comma-separated set (--rating 8,9,10)")
+		}
+	}
+	return nil
+}
+
 // getList builds a no-argument GET command (e.g. `movie trending`).
 func (a *App) getList(use, short, path string, auth bool) *cobra.Command {
 	return &cobra.Command{

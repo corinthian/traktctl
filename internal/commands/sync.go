@@ -84,6 +84,12 @@ func (a *App) syncHistory() *cobra.Command {
 		Use:   "get",
 		Short: "Get watch history",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Trakt only serves the item id as a segment after a type segment,
+			// so --id alone was parsed, dropped, and answered with the full
+			// unfiltered history. There is no type to default to here.
+			if id != "" && typ == "" {
+				return output.UsageErrorHint("--id needs --type", "e.g. --type movies --id 12345")
+			}
 			path := "/sync/history"
 			if typ != "" {
 				path += "/" + typ
@@ -126,13 +132,15 @@ func (a *App) syncRatings() *cobra.Command {
 		Use:   "get",
 		Short: "Get ratings",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := "/sync/ratings"
-			if typ != "" {
-				path += "/" + typ
-				if rating != "" {
-					path += "/" + rating
-				}
+			// Shared with `user ratings` (ratingsSuffix): --rating defaults the
+			// type segment to "all" so the filter is reachable, and the value
+			// is validated locally because Trakt answers an out-of-range one
+			// with 200 and an empty array.
+			suffix, cerr := ratingsSuffix(typ, rating)
+			if cerr != nil {
+				return cerr
 			}
+			path := "/sync/ratings" + suffix
 			res, err := a.get(path, a.baseOpts(true))
 			if err != nil {
 				return err
@@ -140,8 +148,8 @@ func (a *App) syncRatings() *cobra.Command {
 			return a.emit(res, "")
 		},
 	}
-	get.Flags().StringVar(&typ, "type", "", "movies|shows|seasons|episodes")
-	get.Flags().StringVar(&rating, "rating", "", "filter by rating 1-10")
+	get.Flags().StringVar(&typ, "type", "", "movies|shows|seasons|episodes|all")
+	get.Flags().StringVar(&rating, "rating", "", "filter by rating 1-10 (comma-separated for a set, e.g. 8,9)")
 	c.AddCommand(get)
 	c.AddCommand(a.postCmd("add", "Add ratings (idempotent)", "/sync/ratings", false))
 	c.AddCommand(a.postCmd("remove", "Remove ratings", "/sync/ratings/remove", true))
@@ -157,6 +165,9 @@ func (a *App) syncSortable(seg string) *cobra.Command {
 		Use:   "get",
 		Short: "Get " + seg,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cerr := validateSortFlags(typ, sortBy, sortHow); cerr != nil {
+				return cerr
+			}
 			path := "/sync/" + seg
 			if typ != "" {
 				path += "/" + typ

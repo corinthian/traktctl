@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/corinthian/traktctl/internal/client"
 	"github.com/corinthian/traktctl/internal/output"
@@ -284,6 +283,9 @@ func (a *App) userSortableCmd(use, short, base string) *cobra.Command {
 		Use:   use,
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cerr := validateSortFlags(typ, sortBy, sortHow); cerr != nil {
+				return cerr
+			}
 			path := "/users/" + a.userTarget(user) + "/" + base
 			if typ != "" {
 				path += "/" + typ
@@ -394,31 +396,36 @@ var ratingTypes = map[string]bool{
 // caller cannot tell from "you have rated nothing 11". Comma-separated values
 // are supported — Trakt filters on the set (/ratings/all/8,9).
 func ratingsPath(target, typ, rating string) (string, *output.CLIError) {
-	path := "/users/" + target + "/ratings"
+	suffix, cerr := ratingsSuffix(typ, rating)
+	if cerr != nil {
+		return "", cerr
+	}
+	return "/users/" + target + "/ratings" + suffix, nil
+}
+
+// ratingsSuffix builds the shared [/{type}[/{rating}]] tail. Both ratings
+// readers -- `user ratings` and `sync ratings get` -- go through it, because
+// the defect was the two disagreeing: one defaulted the type segment and
+// validated the value, the other dropped --rating on the floor.
+func ratingsSuffix(typ, rating string) (string, *output.CLIError) {
 	if rating != "" && typ == "" {
 		typ = "all"
 	}
 	if typ == "" {
-		return path, nil
+		return "", nil
 	}
 	if !ratingTypes[typ] {
 		return "", output.UsageErrorHint(
 			"invalid --type "+strconv.Quote(typ)+" for ratings",
 			"valid types: movies, shows, seasons, episodes, all")
 	}
-	path += "/" + typ
 	if rating == "" {
-		return path, nil
+		return "/" + typ, nil
 	}
-	for _, part := range strings.Split(rating, ",") {
-		n, err := strconv.Atoi(strings.TrimSpace(part))
-		if err != nil || n < 1 || n > 10 {
-			return "", output.UsageErrorHint(
-				"invalid --rating "+strconv.Quote(rating)+"; ratings are 1-10",
-				"pass one value (--rating 8) or a comma-separated set (--rating 8,9,10)")
-		}
+	if cerr := validateRating(rating); cerr != nil {
+		return "", cerr
 	}
-	return path + "/" + rating, nil
+	return "/" + typ + "/" + rating, nil
 }
 
 // userRatingsCmd: GET /users/{id}/ratings[/{type}[/{rating}]].
@@ -485,6 +492,9 @@ func (a *App) userListItems() *cobra.Command {
 		Use:   "list-items",
 		Short: "Items in a list",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cerr := validateSortFlags(typ, sortBy, sortHow); cerr != nil {
+				return cerr
+			}
 			prefix, err := a.listPrefix(user, listID)
 			if err != nil {
 				return err

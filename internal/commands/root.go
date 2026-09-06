@@ -25,6 +25,7 @@ func NewRoot() (*cobra.Command, *App) {
 		// Resolve config/client once flags are parsed, and honor --llm before
 		// any command runs.
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			app.runCtx = cmd.Context()
 			if g.LLM {
 				emitLLMHelp(cmd, app.Out)
 				os.Exit(0)

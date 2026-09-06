@@ -72,6 +72,13 @@ type App struct {
 	// CfgErr holds a BAD_CONFIG failure that was tolerated rather than fatal,
 	// for the commands annotated tolerateBadConfig. Nil on the normal path.
 	CfgErr *output.CLIError
+
+	// runCtx is cmd.Context(), captured in PersistentPreRunE. In production
+	// this is context.Background() (main.go calls Execute(), not
+	// ExecuteContext()) -- see ctx()'s doc comment. Exported access is
+	// through ctx(), not this field directly, so a test can set it without a
+	// live cobra command.
+	runCtx context.Context
 }
 
 // tolerateBadConfig marks the commands that must still run when the config
@@ -348,7 +355,16 @@ func (a *App) baseOpts(auth bool) client.Options {
 
 // ctx returns a background context; a deadline is enforced by the http client
 // timeout. Centralized so a future --timeout/global cancellation hooks in once.
-func (a *App) ctx() context.Context { return context.Background() }
+// runCtx is the invocation context, set from cmd.Context() in
+// PersistentPreRunE. Nil until then (e.g. in a test that builds an App
+// directly), so ctx() falls back to context.Background() rather than
+// panicking on a nil Context.
+func (a *App) ctx() context.Context {
+	if a.runCtx != nil {
+		return a.runCtx
+	}
+	return context.Background()
+}
 
 // get is a convenience for a GET call returning the result or CLIError-as-error.
 func (a *App) get(path string, opts client.Options) (*client.Result, error) {

@@ -166,6 +166,8 @@ The exit class is derived from `error.code`, never paired by hand:
 | `DECODE_ERROR` | 4 | Trakt sent a response traktctl could not decode, or one over the size bound |
 | `NOT_APPLIED` | 6 | Trakt answered 2xx and applied nothing |
 
+traktctl builds every request on a background context (no signal handling, no `ExecuteContext`), so a cancelled request is not reachable in the shipped binary today; if it ever were, it would report `TRANSPORT_FAILED` at exit 3 — never a timeout, and never its own code.
+
 Config resolution: `--config`, then `$TRAKTCTL_CONFIG`, then `~/.config/traktctl/config.toml`. An explicit path is authoritative and never falls back; an empty value at either explicit source counts as unset. The default file is allowed to be absent — that is not an error. Anything else about the default path is: a directory sitting at it, a stat that fails for any other reason such as directory permissions, or a home directory that cannot be resolved all report `BAD_CONFIG` rather than "no config".
 
 `--raw` passes Trakt's body through, `--ndjson` emits one object per line, `--terse` emits a one-line summary.

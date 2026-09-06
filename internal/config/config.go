@@ -11,8 +11,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/corinthian/traktctl/internal/configpath"
 	toml "github.com/pelletier/go-toml/v2"
 )
 
@@ -121,40 +123,54 @@ var ErrConfigPath = errors.New("config path unusable")
 // as unset, not as an explicit empty path.
 //
 // Only the default candidate tolerates being absent -- env and flags may supply
-// everything a command needs.
+// everything a command needs. Absent is the *only* forgiven outcome on the
+// default path: a directory there, or a Stat that fails for any other reason,
+// or a home directory that cannot be resolved, used to read as "no config",
+// which reported a real misconfiguration as a fresh install.
 func resolveConfigPath(explicit string) (string, bool, error) {
-	path, source := explicit, "explicit --config path"
-	if path == "" {
-		if env := os.Getenv("TRAKTCTL_CONFIG"); env != "" {
-			path, source = env, "TRAKTCTL_CONFIG"
-		}
+	source := "explicit --config path"
+	if strings.TrimSpace(explicit) == "" && os.Getenv("TRAKTCTL_CONFIG") != "" {
+		source = "TRAKTCTL_CONFIG"
 	}
 
-	if path != "" {
-		st, err := os.Stat(path)
-		switch {
-		case err != nil && errors.Is(err, os.ErrNotExist):
-			if source == "TRAKTCTL_CONFIG" {
-				return "", true, fmt.Errorf("TRAKTCTL_CONFIG points at a missing file: %s: %w", path, ErrConfigPath)
-			}
-			return "", true, fmt.Errorf("explicit --config path does not exist: %s: %w", path, ErrConfigPath)
-		case err != nil:
-			return "", true, fmt.Errorf("%s is unreadable: %s: %w: %w", source, path, err, ErrConfigPath)
-		case st.IsDir():
-			return "", true, fmt.Errorf("%s is a directory, not a config file: %s: %w", source, path, ErrConfigPath)
+	// The home lookup happens before the resolve, not inside it: a home
+	// directory that cannot be resolved is a failure to work out where the
+	// default lives, and returning an empty default path for it is what used
+	// to report a real config as absent.
+	var def string
+	if strings.TrimSpace(explicit) == "" && os.Getenv("TRAKTCTL_CONFIG") == "" {
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			return "", false, fmt.Errorf("cannot resolve the default config path: %w: %w", herr, ErrConfigPath)
 		}
-		return path, true, nil
+		def = filepath.Join(home, ".config", "traktctl", "config.toml")
+		source = "default config path " + def
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", false, nil
+	path, isExplicit, err := configpath.Resolve(explicit, "TRAKTCTL_CONFIG", def)
+	if err == nil {
+		return path, isExplicit, nil
 	}
-	def := filepath.Join(home, ".config", "traktctl", "config.toml")
-	if st, serr := os.Stat(def); serr == nil && !st.IsDir() {
-		return def, false, nil
+
+	// The wording stays traktctl's, and everything is re-wrapped in traktctl's
+	// own ErrConfigPath so root.go's tolerance test is unchanged.
+	named := strings.TrimSpace(explicit)
+	if named == "" {
+		named = os.Getenv("TRAKTCTL_CONFIG")
 	}
-	return "", false, nil
+	if named == "" {
+		named = def
+	}
+	switch {
+	case errors.Is(err, configpath.ErrIsDirectory):
+		return "", isExplicit, fmt.Errorf("%s is a directory, not a config file: %s: %w", source, named, ErrConfigPath)
+	case errors.Is(err, os.ErrNotExist):
+		if source == "TRAKTCTL_CONFIG" {
+			return "", isExplicit, fmt.Errorf("TRAKTCTL_CONFIG points at a missing file: %s: %w", named, ErrConfigPath)
+		}
+		return "", isExplicit, fmt.Errorf("explicit --config path does not exist: %s: %w", named, ErrConfigPath)
+	}
+	return "", isExplicit, fmt.Errorf("%s is unreadable: %s: %w: %w", source, named, err, ErrConfigPath)
 }
 
 // validateBaseURL enforces the trust boundary on where API traffic can go:

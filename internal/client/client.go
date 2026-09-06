@@ -21,7 +21,6 @@ import (
 	"github.com/corinthian/traktctl/internal/cause"
 	"github.com/corinthian/traktctl/internal/output"
 	"github.com/corinthian/traktctl/internal/xhttp"
-	"golang.org/x/time/rate"
 )
 
 // BodyLimit bounds every response body traktctl reads, on the API path and the
@@ -49,19 +48,17 @@ type Client struct {
 	userAgent string
 	tokens    TokenSource
 	bodyLimit int64
-	limiter   *rate.Limiter
 	errW      io.Writer
 }
 
 // Config configures a Client.
 type Config struct {
-	BaseURL   string
-	ClientID  string
-	Version   string // traktctl version, for User-Agent
-	Timeout   time.Duration
-	Tokens    TokenSource
-	ErrW      io.Writer
-	RateLimit float64 // requests/sec; 0 disables limiting
+	BaseURL  string
+	ClientID string
+	Version  string // traktctl version, for User-Agent
+	Timeout  time.Duration
+	Tokens   TokenSource
+	ErrW     io.Writer
 }
 
 // pageCap is the --all runaway guard; --really-all overrides it.
@@ -69,10 +66,6 @@ const pageCap = 100
 
 // New builds a Client.
 func New(c Config) *Client {
-	var lim *rate.Limiter
-	if c.RateLimit > 0 {
-		lim = rate.NewLimiter(rate.Limit(c.RateLimit), 1)
-	}
 	return &Client{
 		http: xhttp.NewClient(xhttp.Options{
 			Timeout:   c.Timeout,
@@ -83,7 +76,6 @@ func New(c Config) *Client {
 		userAgent: "traktctl/" + c.Version,
 		tokens:    c.Tokens,
 		bodyLimit: BodyLimit,
-		limiter:   lim,
 		errW:      c.ErrW,
 	}
 }
@@ -127,9 +119,6 @@ func (c *Client) Do(ctx context.Context, method, path string, opts Options) (*Re
 
 // doOnce performs a single request. allowRefresh gates the one-shot 401 retry.
 func (c *Client) doOnce(ctx context.Context, method, path string, opts Options, allowRefresh bool) (*Result, *output.CLIError) {
-	if c.limiter != nil {
-		_ = c.limiter.Wait(ctx)
-	}
 	start := time.Now()
 	req, cerr := c.buildRequest(ctx, method, path, opts)
 	if cerr != nil {

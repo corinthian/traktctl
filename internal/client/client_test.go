@@ -82,6 +82,44 @@ func TestRefusesCrossOriginRedirect(t *testing.T) {
 	if secondHit {
 		t.Errorf("second-origin server was hit before the redirect was refused; Authorization=%q leaked", secondAuth)
 	}
+	// Both clients now route through xhttp.NewClient's shared RedirectPolicy,
+	// which reports a refused redirect as a generic transport failure, not
+	// the timeout code the old ad hoc CheckRedirect used to fall through to.
+	if cerr.Code != output.CodeTransportFailed {
+		t.Errorf("code = %q, want %q", cerr.Code, output.CodeTransportFailed)
+	}
+	if cerr.Exit != output.ExitTransport {
+		t.Errorf("exit = %v, want %v", cerr.Exit, output.ExitTransport)
+	}
+}
+
+// TestRedirectOverHopCapIsTransportFailed: xhttp checks the hop cap before the
+// origin check, so a same-origin chain that runs past 10 hops is refused as
+// over-cap, not followed indefinitely and not confused with a cross-origin
+// refusal.
+func TestRedirectOverHopCapIsTransportFailed(t *testing.T) {
+	var hits int
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		http.Redirect(w, r, srv.URL+"/hop"+strconv.Itoa(hits), http.StatusFound)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL, &fakeTokens{bearer: "tok", has: true})
+	_, cerr := c.Do(context.Background(), http.MethodGet, "/x", Options{})
+	if cerr == nil {
+		t.Fatal("expected an error for a redirect chain over the hop cap, got nil")
+	}
+	if cerr.Code != output.CodeTransportFailed {
+		t.Errorf("code = %q, want %q", cerr.Code, output.CodeTransportFailed)
+	}
+	if cerr.Exit != output.ExitTransport {
+		t.Errorf("exit = %v, want %v", cerr.Exit, output.ExitTransport)
+	}
+	if hits <= 10 {
+		t.Errorf("only saw %d hops before refusal; the chain should run past the 10-hop cap", hits)
+	}
 }
 
 func TestErrorMapping(t *testing.T) {

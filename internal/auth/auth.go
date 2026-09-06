@@ -59,23 +59,12 @@ func NewManager(cfg *config.Config) *Manager {
 	return &Manager{
 		cfg:   cfg,
 		store: newStore(),
-		http:  &http.Client{Timeout: cfg.Timeout, CheckRedirect: rejectCrossOriginRedirect},
-		errW:  os.Stderr,
+		http: xhttp.NewClient(xhttp.Options{
+			Timeout:   cfg.Timeout,
+			Redirects: xhttp.RedirectPolicy{SameOrigin: true, MaxHops: 10},
+		}),
+		errW: os.Stderr,
 	}
-}
-
-// rejectCrossOriginRedirect refuses to follow a redirect whose scheme or host
-// differs from the first request's, so the OAuth client_secret/tokens can't
-// be retargeted to an attacker-controlled origin via a redirect.
-func rejectCrossOriginRedirect(req *http.Request, via []*http.Request) error {
-	if len(via) == 0 {
-		return nil
-	}
-	first := via[0].URL
-	if req.URL.Scheme != first.Scheme || req.URL.Host != first.Host {
-		return fmt.Errorf("refusing cross-origin redirect: %s -> %s", first, req.URL)
-	}
-	return nil
 }
 
 // limit is the response-body bound for every OAuth read.

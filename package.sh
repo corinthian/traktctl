@@ -10,14 +10,18 @@
 # yields `traktctl` regardless of arch. Wraps build.sh, which compiles the
 # binaries (the universal one is ad-hoc codesigned there).
 #
-# Usage: ./package.sh [version]     # version defaults to the app.go constant
+# Usage: ./package.sh [version]     # forwarded to build.sh; see its own
+#                                    # resolution order (arg > env > tag > source)
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="${1:-$(grep -m1 'Version =' internal/commands/app.go | cut -d'"' -f2)}"
+./build.sh "$@"
 
+# The version that names every artifact below comes from the binary build.sh
+# just produced and verified, not from a second, independent resolution here
+# -- so the artefact names can never disagree with what the binary reports.
+VERSION="$(dist/traktctl --version | awk '{print $3}')"
 echo "[package] traktctl ${VERSION}"
-./build.sh "$VERSION"
 
 cd dist
 rm -f traktctl-*-macos.tar.gz traktctl-*-SHA256SUMS

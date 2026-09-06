@@ -55,6 +55,8 @@ The personal-scope commands (`user watchlist`, `user history`, and the rest of t
 go build -o dist/traktctl ./cmd/traktctl   # single-arch dev build
 ```
 
+`build.sh` runs govulncheck, `go vet`, `gofmt -l`, `go test ./...`, `go test -race ./...` and `go mod tidy -diff` before compiling, then stamps and verifies the version: the positional argument wins, then `$TRAKTCTL_BUILD_VERSION`, then an exact git tag on HEAD (leading `v` stripped), then the `Version` constant in `internal/commands/app.go`. `dist/traktctl --version` must equal `traktctl version <resolved>` exactly or the build fails. `./package.sh [version]` wraps it and names the release tarballs and `SHA256SUMS` from the same binary's `--version` output, so artefact names can never disagree with what ships.
+
 Requires Go 1.26+. No runtime dependencies.
 
 ## Configuration

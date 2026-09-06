@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // clearTraktEnv removes the env vars Load consults so a test's machine state
@@ -98,13 +99,131 @@ func TestFlagOverridesEnvAndFile(t *testing.T) {
 
 func TestTimeoutParsing(t *testing.T) {
 	clearTraktEnv(t)
-	path := writeTempConfig(t, "client_id = \"x\"\ntimeout = \"5s\"\n")
+	path := writeTempConfig(t, "client_id = \"x\"\ntimeout = 5\n")
 	cfg, err := Load(Flags{ConfigPath: path})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if cfg.Timeout.Seconds() != 5 {
 		t.Errorf("Timeout = %v, want 5s", cfg.Timeout)
+	}
+}
+
+func TestTimeoutDefaultsTo30s(t *testing.T) {
+	clearTraktEnv(t)
+	path := writeTempConfig(t, "client_id = \"x\"\n")
+	cfg, err := Load(Flags{ConfigPath: path})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Timeout != 30*time.Second {
+		t.Errorf("Timeout = %v, want the 30s default", cfg.Timeout)
+	}
+}
+
+func TestTimeoutEnvInvalidIsBadConfig(t *testing.T) {
+	clearTraktEnv(t)
+	path := writeTempConfig(t, "client_id = \"x\"\n")
+	t.Setenv("TRAKTCTL_TIMEOUT", "abc")
+	_, err := Load(Flags{ConfigPath: path})
+	if err == nil {
+		t.Fatal("Load = nil, want an error naming $TRAKTCTL_TIMEOUT")
+	}
+	if !strings.Contains(err.Error(), "TRAKTCTL_TIMEOUT") {
+		t.Errorf("error %q does not name $TRAKTCTL_TIMEOUT", err)
+	}
+}
+
+func TestTimeoutEnvEmptyCountsAsUnset(t *testing.T) {
+	clearTraktEnv(t)
+	path := writeTempConfig(t, "client_id = \"x\"\ntimeout = 45\n")
+	t.Setenv("TRAKTCTL_TIMEOUT", "")
+	cfg, err := Load(Flags{ConfigPath: path})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Timeout != 45*time.Second {
+		t.Errorf("Timeout = %v, want the file's 45s (empty env is unset)", cfg.Timeout)
+	}
+}
+
+func TestTimeoutFileInvalidNamesConfigTimeout(t *testing.T) {
+	clearTraktEnv(t)
+	for _, body := range []string{
+		`timeout = "30s"`,
+		`timeout = "30"`,
+		`timeout = "0s"`,
+		`timeout = "-5s"`,
+		`timeout = "garbage"`,
+		`timeout = 30.0`,
+		`timeout = true`,
+		"timeout = [1,2]",
+		"timeout = {a=1}",
+	} {
+		path := writeTempConfig(t, "client_id = \"x\"\n"+body+"\n")
+		_, err := Load(Flags{ConfigPath: path})
+		if err == nil {
+			t.Errorf("Load(%q) = nil, want an error", body)
+			continue
+		}
+		want := "config timeout (" + path + ")"
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Load(%q) error %q does not contain %q", body, err, want)
+		}
+	}
+}
+
+func TestTOMLTimeoutIntegerAccepted(t *testing.T) {
+	clearTraktEnv(t)
+	path := writeTempConfig(t, "client_id = \"x\"\ntimeout = 30\n")
+	cfg, err := Load(Flags{ConfigPath: path})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Timeout != 30*time.Second {
+		t.Errorf("Timeout = %v, want 30s", cfg.Timeout)
+	}
+	for _, n := range []string{"0", "-5", "86401"} {
+		p := writeTempConfig(t, "client_id = \"x\"\ntimeout = "+n+"\n")
+		if _, err := Load(Flags{ConfigPath: p}); err == nil {
+			t.Errorf("Load(timeout = %s) = nil, want an error", n)
+		}
+	}
+}
+
+func TestInvalidFlagBeatsValidFile(t *testing.T) {
+	clearTraktEnv(t)
+	path := writeTempConfig(t, "client_id = \"x\"\ntimeout = 30\n")
+	_, err := Load(Flags{ConfigPath: path, Timeout: "abc", TimeoutSet: true})
+	if err == nil {
+		t.Fatal("Load = nil, want the invalid flag to win over the valid file")
+	}
+	if !strings.Contains(err.Error(), "--timeout") {
+		t.Errorf("error %q does not name --timeout", err)
+	}
+}
+
+func TestTimeoutFlagSetWins(t *testing.T) {
+	clearTraktEnv(t)
+	path := writeTempConfig(t, "client_id = \"x\"\ntimeout = 30\n")
+	cfg, err := Load(Flags{ConfigPath: path, Timeout: "45", TimeoutSet: true})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Timeout != 45*time.Second {
+		t.Errorf("Timeout = %v, want the flag's 45s", cfg.Timeout)
+	}
+}
+
+func TestTimeoutFlagEmptyExplicitIsError(t *testing.T) {
+	clearTraktEnv(t)
+	path := writeTempConfig(t, "client_id = \"x\"\n")
+	_, err := Load(Flags{ConfigPath: path, Timeout: "", TimeoutSet: true})
+	if err == nil {
+		t.Fatal("Load = nil, want an explicit empty --timeout to error")
+	}
+	if !strings.Contains(err.Error(), "--timeout") {
+		t.Errorf("error %q does not name --timeout", err)
 	}
 }
 

@@ -32,6 +32,7 @@ Trakt is the **metadata/social/history** layer. It does NOT play anything. "Play
 - **Don't invent limitations.** An `ok:true` empty result is not proof a feature is broken — a watchlist or search can genuinely be empty. Run the command, report plainly, let the user disambiguate. Treat a gap as real only if it's documented here or the user confirms it.
 - **Confirm before destructive writes.** See [Confirmation Gates](#confirmation-gates). The CLI requires `--confirm` on these; the *decision* to proceed is yours to get from the user first.
 - **Resolve titles, hide IDs.** Users say "Dune", not a trakt slug. Search to resolve, show a numbered list, act on the row they pick. Never make the user type or read a trakt ID. See [IDs & Row Numbers](#ids--row-numbers).
+- **`--timeout` takes whole seconds only.** `--timeout 30` (1-86400), not `30s`. `TRAKTCTL_TIMEOUT` is the env equivalent. A `config.toml` with `timeout = "30s"` (the old string form) fails every command with `BAD_CONFIG` until it's edited to `timeout = 30`.
 
 ---
 

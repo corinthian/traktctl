@@ -64,6 +64,7 @@ Resolution order (highest first): CLI flags > environment > `config.toml` > keyc
 - `config.toml` is searched in `--config`, then `$TRAKTCTL_CONFIG`, then `~/.config/traktctl/config.toml`. There is no cwd fallback — for a repo-local dev config, set `TRAKTCTL_CONFIG=./config.toml`.
 - Tokens live in the macOS Keychain (service `traktctl`). File fallback: `~/.config/traktctl/tokens.json` only (no cwd fallback).
 - Env: `TRAKT_CLIENT_ID`, `TRAKT_CLIENT_SECRET`, `TRAKT_ACCESS_TOKEN`, `TRAKT_REFRESH_TOKEN`, `TRAKT_BASE_URL`.
+- Request timeout: `--timeout`, `$TRAKTCTL_TIMEOUT` and `timeout` in `config.toml` all take a whole number of seconds, 1 to 86400 (default 30). Anything else is rejected naming its source: `--timeout` is `BAD_REQUEST`, the env var and the config key are `BAD_CONFIG`. A config file holding the old `timeout = "30s"` form must be edited to `timeout = 30` — every command exits `BAD_CONFIG` until it is; `config init --force` cannot migrate it and drops the key with a warning instead.
 
 Example `config.toml`:
 
@@ -72,6 +73,7 @@ client_id     = "..."
 client_secret = "..."
 default_user  = "your-trakt-username"   # optional; user-scoped reads fall back to "me"
 base_url      = "https://api.trakt.tv"
+timeout       = 30                      # optional; whole seconds, 1-86400
 ```
 
 ## Bootstrap from scratch

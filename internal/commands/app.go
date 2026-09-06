@@ -7,6 +7,7 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/corinthian/traktctl/internal/client"
 	"github.com/corinthian/traktctl/internal/config"
 	"github.com/corinthian/traktctl/internal/output"
+	"github.com/corinthian/traktctl/internal/xduration"
 	"github.com/spf13/cobra"
 )
 
@@ -34,6 +36,11 @@ type GlobalFlags struct {
 	AccessToken  string
 	BaseURL      string
 	ConfigPath   string
+	Timeout      string
+	// TimeoutSet is cmd.Flags().Changed("timeout"), set in PersistentPreRunE
+	// before build() -- it is what makes --timeout "" distinguishable from an
+	// absent flag.
+	TimeoutSet bool
 
 	Extended  string
 	Page      int
@@ -100,8 +107,19 @@ func (a *App) build() *output.CLIError {
 		AccessToken:  a.Flags.AccessToken,
 		BaseURL:      a.Flags.BaseURL,
 		ConfigPath:   a.Flags.ConfigPath,
+		Timeout:      a.Flags.Timeout,
+		TimeoutSet:   a.Flags.TimeoutSet,
 	})
 	if err != nil {
+		// A rejected --timeout is a usage error (BAD_REQUEST); a rejected
+		// $TRAKTCTL_TIMEOUT or config timeout is a config error (BAD_CONFIG).
+		// xduration itself names no tool's codes -- the Source is what
+		// distinguishes them here.
+		var derr *xduration.Error
+		if errors.As(err, &derr) && derr.Source == "--timeout" {
+			return output.NewError(output.CodeBadRequest, "invalid --timeout: "+err.Error(),
+				output.ExitForCode(output.CodeBadRequest)).WithCause(err)
+		}
 		return output.NewError(output.CodeBadConfig, "loading config: "+err.Error(), output.ExitUser).WithCause(err)
 	}
 	a.wire(cfg)

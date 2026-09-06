@@ -32,6 +32,10 @@ func NewRoot() (*cobra.Command, *App) {
 			if cerr := validateIDType(g.IDType); cerr != nil {
 				return cerr
 			}
+			// cmd.Flags().Changed is what distinguishes an explicitly empty
+			// --timeout "" from an absent flag; config.Load cannot ask cobra
+			// this itself, so it is captured here before app.build().
+			g.TimeoutSet = cmd.Flags().Changed("timeout")
 			if cerr := app.build(); cerr != nil {
 				// Two commands must survive an unusable config *path*: the
 				// diagnostic that reports it, and the bootstrap that creates
@@ -66,6 +70,9 @@ func NewRoot() (*cobra.Command, *App) {
 	pf.StringVar(&g.AccessToken, "access-token", "", "OAuth access token (overrides stored)")
 	pf.StringVar(&g.BaseURL, "base-url", "", "API base URL (default https://api.trakt.tv)")
 	pf.StringVar(&g.ConfigPath, "config", "", "path to config.toml")
+	// A string, not an int: an IntVar hands "" and " 30 " to cobra's own
+	// parse error instead of the source-named one xduration.Parse produces.
+	pf.StringVar(&g.Timeout, "timeout", "", "request timeout in whole seconds (1-86400)")
 
 	pf.StringVar(&g.Extended, "extended", "", "extended info, e.g. full,images")
 	pf.IntVar(&g.Page, "page", 0, "page number")

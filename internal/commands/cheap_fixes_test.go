@@ -1,12 +1,14 @@
 package commands
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/corinthian/traktctl/internal/config"
+	"github.com/corinthian/traktctl/internal/output"
 )
 
 // TestBaseOptsUsesConfiguredExtended: `extended` in config.toml was a dead key
@@ -47,7 +49,7 @@ func TestConfigInitForcePreservesTimeout(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("TRAKTCTL_CONFIG", "")
 	path := filepath.Join(t.TempDir(), "config.toml")
-	if err := os.WriteFile(path, []byte("client_id = \"old\"\ntimeout = \"90s\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("client_id = \"old\"\ntimeout = 45\n"), 0o600); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
 
@@ -59,7 +61,7 @@ func TestConfigInitForcePreservesTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read rewritten config: %v", err)
 	}
-	if !strings.Contains(string(b), `timeout = '90s'`) && !strings.Contains(string(b), `timeout = "90s"`) {
+	if !strings.Contains(string(b), "timeout = 45") {
 		t.Errorf("rewritten config dropped the timeout:\n%s", b)
 	}
 
@@ -67,11 +69,50 @@ func TestConfigInitForcePreservesTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load rewritten config: %v", err)
 	}
-	if cfg.Timeout.Seconds() != 90 {
-		t.Errorf("Timeout = %v, want 90s", cfg.Timeout)
+	if cfg.Timeout.Seconds() != 45 {
+		t.Errorf("Timeout = %v, want 45s", cfg.Timeout)
 	}
 	if cfg.ClientID != "new" {
 		t.Errorf("ClientID = %q, want the newly written %q", cfg.ClientID, "new")
+	}
+}
+
+// TestConfigInitForceOverLegacyStringTimeoutIsBadConfig: once `timeout` is an
+// integer, a config carrying the old string form fails to decode. Per 2.7's
+// tolerance table ("valid file with an invalid timeout ... not forgiven under
+// tolerance, because the file parsed and the value is wrong"), that is a
+// parse-time failure like any other -- app.build()'s own config.Load rejects
+// it before `config init --force`'s RunE ever runs, exactly like the sibling
+// TestConfigInitRejectsUnparseableExplicitConfig. The file is left untouched;
+// there is no rewrite-and-drop path for this case, only the repair path of
+// hand-editing the file (or moving it aside) before rerunning `config init`.
+func TestConfigInitForceOverLegacyStringTimeoutIsBadConfig(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TRAKTCTL_CONFIG", "")
+	path := filepath.Join(t.TempDir(), "config.toml")
+	seed := []byte("client_id = \"old\"\ntimeout = \"30s\"\n")
+	if err := os.WriteFile(path, seed, 0o600); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	_, err := runRoot(t, "config", "init", "--config", path, "--client-id", "new", "--force")
+	var cerr *output.CLIError
+	if !errors.As(err, &cerr) {
+		t.Fatalf("config init --force over a legacy string timeout = %v, want *output.CLIError", err)
+	}
+	if cerr.Code != output.CodeBadConfig {
+		t.Fatalf("code = %q, want %q", cerr.Code, output.CodeBadConfig)
+	}
+	if !strings.Contains(cerr.Message, "config timeout ("+path+")") {
+		t.Errorf("message %q does not name config timeout (%s)", cerr.Message, path)
+	}
+
+	got, rerr := os.ReadFile(path)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if string(got) != string(seed) {
+		t.Errorf("config init overwrote a file it should have rejected; contents now %q", got)
 	}
 }
 

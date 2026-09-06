@@ -11,11 +11,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/corinthian/traktctl/internal/atomicfile"
 	"github.com/corinthian/traktctl/internal/configpath"
+	"github.com/corinthian/traktctl/internal/xduration"
 	toml "github.com/pelletier/go-toml/v2"
 )
 
@@ -23,13 +25,19 @@ import (
 // may be populated from env/flags but the canonical token store is the auth
 // package (keychain, file fallback).
 type Config struct {
-	ClientID     string        `toml:"client_id"`
-	ClientSecret string        `toml:"client_secret"`
-	BaseURL      string        `toml:"base_url"`
-	DefaultUser  string        `toml:"default_user"`
-	Extended     string        `toml:"extended"`
-	Timeout      time.Duration `toml:"-"`
-	TimeoutStr   string        `toml:"timeout"`
+	ClientID     string `toml:"client_id"`
+	ClientSecret string `toml:"client_secret"`
+	BaseURL      string `toml:"base_url"`
+	DefaultUser  string `toml:"default_user"`
+	Extended     string `toml:"extended"`
+	// Timeout is the resolved value: xduration.Parse/Resolve over --timeout,
+	// $TRAKTCTL_TIMEOUT and TimeoutFile, in that order. Never set from TOML
+	// directly -- TimeoutFile is the raw decoded field, kept as a pointer so
+	// "absent" and "zero" are distinguishable and so a wrong TOML type (a
+	// string, a float, a bool, an array, a table) is a decode error naming
+	// `timeout` rather than a silently ignored key.
+	Timeout     time.Duration `toml:"-"`
+	TimeoutFile *int64        `toml:"timeout"`
 
 	// AccessToken/RefreshToken from flags or env only (highest precedence,
 	// override the token store when present).
@@ -47,6 +55,13 @@ type Flags struct {
 	AccessToken  string
 	BaseURL      string
 	ConfigPath   string // explicit --config path, optional
+
+	// Timeout and TimeoutSet carry --timeout. TimeoutSet distinguishes an
+	// absent flag from an explicitly empty one (--timeout ""), which cobra's
+	// Changed() reports but a bare string cannot -- Load cannot ask cobra
+	// itself, so the caller (root.go's PersistentPreRunE) sets this.
+	Timeout    string
+	TimeoutSet bool
 }
 
 const defaultBaseURL = "https://api.trakt.tv"
@@ -71,7 +86,7 @@ func Load(f Flags) (*Config, error) {
 			return nil, fmt.Errorf("reading config %s: %w: %w", path, rerr, ErrConfigPath)
 		}
 		if err := toml.Unmarshal(b, c); err != nil {
-			return nil, err
+			return nil, timeoutDecodeError(err, path)
 		}
 		c.Source = path
 	}
@@ -95,13 +110,51 @@ func Load(f Flags) (*Config, error) {
 	if err := validateBaseURL(c.BaseURL); err != nil {
 		return nil, err
 	}
-	c.Timeout = 30 * time.Second
-	if c.TimeoutStr != "" {
-		if d, err := time.ParseDuration(c.TimeoutStr); err == nil {
-			c.Timeout = d
+	// --timeout is not a Resolve candidate: Resolve skips an empty Value, so
+	// an explicitly empty flag (--timeout "") would read as unset instead of
+	// the error the contract requires. TimeoutSet is what makes that
+	// distinguishable from an absent flag.
+	if f.TimeoutSet {
+		d, err := xduration.Parse(f.Timeout, "--timeout")
+		if err != nil {
+			return nil, err
+		}
+		c.Timeout = d
+		return c, nil
+	}
+
+	fileTimeout := ""
+	if c.TimeoutFile != nil {
+		fileTimeout = strconv.FormatInt(*c.TimeoutFile, 10)
+	}
+	d, err := xduration.Resolve(30*time.Second,
+		xduration.Candidate{Source: "$TRAKTCTL_TIMEOUT", Value: os.Getenv("TRAKTCTL_TIMEOUT")},
+		xduration.Candidate{Source: "config timeout (" + path + ")", Value: fileTimeout},
+	)
+	if err != nil {
+		return nil, err
+	}
+	c.Timeout = d
+	return c, nil
+}
+
+// timeoutDecodeError catches a TOML type mismatch on the `timeout` key --
+// go-toml's own message names the Go field and type ("cannot decode TOML
+// string into struct field ... int64"), which is not the source-named message
+// 2.1 requires. Everything else from Unmarshal passes through unchanged.
+func timeoutDecodeError(err error, path string) error {
+	var de *toml.DecodeError
+	if errors.As(err, &de) {
+		key := de.Key()
+		if len(key) > 0 && key[len(key)-1] == "timeout" {
+			return &xduration.Error{
+				Source: "config timeout (" + path + ")",
+				Value:  "",
+				Reason: "must be a whole number of seconds (1-86400): " + de.Error(),
+			}
 		}
 	}
-	return c, nil
+	return err
 }
 
 // ErrConfigPath marks a config failure that is about the *path* -- the named
@@ -217,10 +270,11 @@ type FileConfig struct {
 	DefaultUser  string `toml:"default_user,omitempty"`
 	BaseURL      string `toml:"base_url,omitempty"`
 	Extended     string `toml:"extended,omitempty"`
-	// Timeout mirrors Config.TimeoutStr. `config init` never sets it, but it
+	// Timeout mirrors Config.TimeoutFile. `config init` never sets it, but it
 	// belongs in the shape so `--force` can carry a hand-edited value forward
-	// instead of silently discarding it.
-	Timeout string `toml:"timeout,omitempty"`
+	// instead of silently discarding it. A legacy string value ("30s") fails
+	// to decode here -- that is ReadFileConfig's job to report, not to migrate.
+	Timeout *int64 `toml:"timeout,omitempty"`
 }
 
 // ReadFileConfig parses an existing config.toml into the on-disk shape. Used by

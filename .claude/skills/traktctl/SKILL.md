@@ -286,3 +286,9 @@ Run this at **every invocation** (Startup Recall step 5), not only after writing
 A lesson that was proposed and declined stays a body with a `declined: YYYY-MM-DD` line added; it no longer counts toward the gate.
 
 No incident log for v1 — traktctl is stateless HTTP with no client-wedge telemetry worth tracking separately. If transport flakiness or rate-limiting becomes a recurring pattern, that's a `new-error` lesson, not a separate log.
+
+---
+
+## Local files
+
+This repo copy is canonical for everything above: generic edits land here and are copied to `~/.claude/skills/traktctl/SKILL.md`. Three files in the installed skill directory are local-only and never flow back: `PERSONAL.md` (machine-specific preferences), `LESSONS.md` (the self-improvement log). Read `PERSONAL.md` first if it exists; its rules override defaults here. If it is missing, run with the defaults.

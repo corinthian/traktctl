@@ -7,3 +7,7 @@
 
 # macOS
 .DS_Store
+
+# Installed-skill local files (never in the repo)
+.claude/skills/traktctl/PERSONAL.md
+.claude/skills/traktctl/INCIDENTS.md

@@ -19,7 +19,7 @@ Goal: human-friendly control over every traktctl surface. The user speaks intent
 
 Trakt is the **metadata/social/history** layer. It does NOT play anything. "Play this", "pause", "what's on my TV" → that belongs to whatever plays media, not this skill. Trakt answers "what is this", "what have I watched", "what's on my watchlist", "what's coming out", "what should I watch".
 
-**Requires traktctl ≥ 1.2.0.** The mutation contract this skill relies on — the `--id` guard, `NOT_APPLIED`/exit 6, `meta.partial`, scope-tagged `--llm`, `BAD_REQUEST` for usage errors — is the 1.2.0 contract. **Before the first mutation of a session, run `traktctl --version`.** Below 1.2.0, say so and stop: older binaries can report a no-op write as `ok: true`, and nothing in the output reveals it. Tell the user to upgrade; do not improvise mutations against an older contract. Reads are unaffected.
+**Requires traktctl ≥ 1.3.0.** The mutation contract this skill relies on — the `--id` guard, `NOT_APPLIED`/exit 6, `meta.partial`, scope-tagged `--llm`, `BAD_REQUEST` for usage errors — is the 1.2.0 contract; the error codes (`DECODE_ERROR`, `TRANSPORT_FAILED`) and the integer-second `--timeout` are 1.3.0. **Before the first mutation of a session, run `traktctl --version`.** Below 1.3.0, say so and stop: older binaries can report a no-op write as `ok: true`, and nothing in the output reveals it. Tell the user to upgrade; do not improvise mutations against an older contract. Reads are unaffected.
 
 ---
 

@@ -18,9 +18,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/corinthian/traktctl/internal/cause"
 	"github.com/corinthian/traktctl/internal/output"
+	"github.com/corinthian/traktctl/internal/xhttp"
 	"golang.org/x/time/rate"
 )
+
+// BodyLimit bounds every response body traktctl reads, on the API path and the
+// OAuth path alike. One constant serves the whole tool: internal/auth imports
+// it from here, and client does not import auth, so there is no cycle.
+//
+// It is the provisional 64 MiB default from contract 2.3 and was not measured
+// against a live Trakt account. The bound is not a user setting: no flag, no
+// env var, no config key.
+const BodyLimit int64 = 64 << 20
 
 // TokenSource supplies the bearer token and can refresh it. Satisfied by
 // auth.Manager.
@@ -37,6 +48,7 @@ type Client struct {
 	clientID  string
 	userAgent string
 	tokens    TokenSource
+	bodyLimit int64
 	limiter   *rate.Limiter
 	errW      io.Writer
 }
@@ -67,6 +79,7 @@ func New(c Config) *Client {
 		clientID:  c.ClientID,
 		userAgent: "traktctl/" + c.Version,
 		tokens:    c.Tokens,
+		bodyLimit: BodyLimit,
 		limiter:   lim,
 		errW:      c.ErrW,
 	}
@@ -137,24 +150,48 @@ func (c *Client) doOnce(ctx context.Context, method, path string, opts Options, 
 	if err != nil {
 		return nil, transportError(err, path, time.Since(start))
 	}
-	defer resp.Body.Close()
+	// ReadBody closes the body, so it is called exactly once per response and
+	// the bytes are reused: the 401 branch below needs them discarded, and
+	// mapHTTPError needs them for its snippet.
+	body, rerr := xhttp.ReadBody(resp, c.bodyLimit)
+	dur := time.Since(start).Milliseconds()
+	nonOK := resp.StatusCode < 200 || resp.StatusCode >= 300
 
 	if resp.StatusCode == http.StatusUnauthorized && allowRefresh && c.tokens.HasToken() {
-		io.Copy(io.Discard, resp.Body)
-		if rerr := c.tokens.Refresh(ctx); rerr == nil {
+		// A discard that failed is reported, not swallowed: refreshing after a
+		// broken read would report the retry's outcome for a request whose own
+		// outcome is unknown.
+		if rerr != nil {
+			return nil, c.bodyError(rerr, method, path, dur)
+		}
+		if refErr := c.tokens.Refresh(ctx); refErr == nil {
 			fmt.Fprintln(c.errW, "[traktctl] access token refreshed")
 			return c.doOnce(ctx, method, path, opts, false)
 		}
 	}
 
-	body, rerr := io.ReadAll(resp.Body)
-	dur := time.Since(start).Milliseconds()
 	if rerr != nil {
-		return nil, &output.CLIError{Code: output.CodeParseError, Message: "reading response body: " + rerr.Error(),
-			Exit: output.ExitTransport, Endpoint: path, DurationMS: dur}
+		// An oversize body on a non-2xx changes nothing about the status: the
+		// status classification wins and there are simply no bytes for the
+		// snippet hint. A read that broke part-way is different — the response
+		// is not reliably complete, and the transport fact is the useful one.
+		if nonOK && errors.Is(rerr, xhttp.ErrOversize) {
+			return nil, mapHTTPError(resp, nil, path, dur)
+		}
+		return nil, c.bodyError(rerr, method, path, dur)
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if nonOK {
 		return nil, mapHTTPError(resp, body, path, dur)
+	}
+	// A 2xx that does not hold exactly one JSON value fails here, at response
+	// time, rather than at output time as an internal marshal failure.
+	var sink json.RawMessage
+	if derr := xhttp.DecodeOne(body, &sink); derr != nil {
+		return nil, &output.CLIError{
+			Code:    output.CodeDecodeError,
+			Message: fmt.Sprintf("invalid JSON in response from %s %s: %s", method, path, derr.Error()),
+			Exit:    output.ExitInternal, Endpoint: path, DurationMS: dur,
+		}
 	}
 	return &Result{
 		Data:       json.RawMessage(body),
@@ -219,6 +256,35 @@ func (c *Client) doAll(ctx context.Context, path string, opts Options) (*Result,
 		}
 	}
 	return &Result{Data: out, Status: 200, Pagination: pag, Endpoint: path, DurationMS: time.Since(start).Milliseconds()}, nil
+}
+
+// bodyError maps a ReadBody failure. It deliberately does not go through
+// Classify: a read that fails part-way wraps io.ErrUnexpectedEOF, which
+// Classify reports as Decode, and a broken connection is not a malformed
+// response.
+func (c *Client) bodyError(err error, method, path string, dur int64) *output.CLIError {
+	if errors.Is(err, xhttp.ErrOversize) {
+		return &output.CLIError{
+			Code:    output.CodeDecodeError,
+			Message: fmt.Sprintf("response body from %s %s exceeds the %s bound", method, path, humanBytes(c.bodyLimit)),
+			Exit:    output.ExitInternal, Endpoint: path, DurationMS: dur,
+		}
+	}
+	return &output.CLIError{
+		Code:    output.CodeTransportFailed,
+		Message: fmt.Sprintf("reading response body from %s %s: %s", method, path, err.Error()),
+		Exit:    output.ExitTransport, Endpoint: path, DurationMS: dur,
+	}
+}
+
+// humanBytes renders the bound the way the contract writes it, "64 MiB", and
+// falls back to a byte count for anything that is not a whole MiB.
+func humanBytes(n int64) string {
+	const mib = 1 << 20
+	if n >= mib && n%mib == 0 {
+		return strconv.FormatInt(n/mib, 10) + " MiB"
+	}
+	return strconv.FormatInt(n, 10) + " bytes"
 }
 
 func firstPage(opts Options) int {
@@ -305,13 +371,23 @@ func parsePagination(h http.Header) *output.Pagination {
 	}
 }
 
+// transportError classifies a failure to get a response at all. Only a genuine
+// deadline keeps TRANSPORT_TIMEOUT; DNS, TLS, refused, a refused redirect and a
+// cancelled request are all TRANSPORT_FAILED, which is what stops "connection
+// timed out" being reported for a name that does not resolve.
+//
+// The timeout message says nothing about whether the request was applied: a
+// mutation that timed out may well have landed.
 func transportError(err error, path string, d time.Duration) *output.CLIError {
-	code := output.CodeTransportTimeout
-	msg := "transport error: " + err.Error()
-	if errors.Is(err, context.DeadlineExceeded) {
-		msg = "request timed out"
+	code, msg := output.CodeTransportFailed, "transport error: "+err.Error()
+	exit := output.ExitTransport
+	switch xhttp.Classify(err) {
+	case cause.Timeout:
+		code, msg = output.CodeTransportTimeout, "request timed out"
+	case cause.Oversize, cause.Decode:
+		code, exit = output.CodeDecodeError, output.ExitInternal
 	}
-	return &output.CLIError{Code: code, Message: msg, Exit: output.ExitTransport, Endpoint: path, DurationMS: d.Milliseconds()}
+	return &output.CLIError{Code: code, Message: msg, Exit: exit, Endpoint: path, DurationMS: d.Milliseconds()}
 }
 
 // mapHTTPError converts a non-2xx response into a typed CLIError.

@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
 
 permissions:
@@ -20,7 +19,17 @@ jobs:
           # govulncheck fails the build when the installed stdlib carries a fixed
           # CVE (first hit: GO-2026-6218 et al., fixed in 1.26.6).
           check-latest: true
+      - run: go build ./...
       - run: go vet ./...
+      - name: gofmt
+        run: |
+          fmt_out="$(gofmt -l internal cmd)"
+          if [ -n "$fmt_out" ]; then
+            echo "$fmt_out"
+            exit 1
+          fi
       - run: go test ./...
+      - run: go test -race ./...
+      - run: go mod tidy -diff
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

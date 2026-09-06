@@ -155,9 +155,22 @@ type CLIError struct {
 	// Under --raw the verdict rides the exit code, which is raw mode's only
 	// verdict channel (it has no `ok:` field).
 	RawBody json.RawMessage
+
+	// cause is the underlying error, when there is one, so callers can
+	// errors.Is against package sentinels without parsing Message.
+	cause error
 }
 
 func (e *CLIError) Error() string { return e.Message }
+
+// Unwrap exposes the cause to errors.Is / errors.As.
+func (e *CLIError) Unwrap() error { return e.cause }
+
+// WithCause attaches the underlying error and returns the same CLIError.
+func (e *CLIError) WithCause(err error) *CLIError {
+	e.cause = err
+	return e
+}
 
 // NewError builds a CLIError.
 func NewError(code, msg string, exit ExitCode) *CLIError {

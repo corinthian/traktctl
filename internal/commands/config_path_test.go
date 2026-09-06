@@ -3,7 +3,9 @@ package commands
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -111,5 +113,52 @@ func TestConfigInitToleratesNewExplicitPath(t *testing.T) {
 	}
 	if got, _ := payload["written_to"].(string); got != target {
 		t.Errorf("written_to = %q, want %q", got, target)
+	}
+}
+
+// The exemption forgives a bad *path* only. A file that exists but does not
+// parse is not a path problem, and `config init` over it would write a config
+// every later command rejects -- so both annotated commands fail BAD_CONFIG.
+func TestConfigInitRejectsUnparseableExplicitConfig(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TRAKTCTL_CONFIG", "")
+	target := filepath.Join(t.TempDir(), "config.toml")
+	bad := []byte("client_id = \"unterminated\n")
+	if err := os.WriteFile(target, bad, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := runRoot(t, "config", "init", "--config", target, "--client-id", "cid", "--force")
+	var cerr *output.CLIError
+	if !errors.As(err, &cerr) {
+		t.Fatalf("`config init --config <unparseable>` err = %v, want *output.CLIError", err)
+	}
+	if cerr.Code != output.CodeBadConfig {
+		t.Fatalf("code = %q, want %q", cerr.Code, output.CodeBadConfig)
+	}
+	got, rerr := os.ReadFile(target)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if string(got) != string(bad) {
+		t.Errorf("config init overwrote an unparseable file; contents now %q", got)
+	}
+}
+
+func TestConfigPathFailsOnUnparseableConfig(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TRAKTCTL_CONFIG", "")
+	target := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(target, []byte("client_id = \"unterminated\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := runRoot(t, "config", "path", "--config", target)
+	var cerr *output.CLIError
+	if !errors.As(err, &cerr) {
+		t.Fatalf("`config path --config <unparseable>` err = %v, want *output.CLIError", err)
+	}
+	if cerr.Code != output.CodeBadConfig {
+		t.Fatalf("code = %q, want %q", cerr.Code, output.CodeBadConfig)
 	}
 }

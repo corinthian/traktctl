@@ -66,8 +66,11 @@ type App struct {
 	CfgErr *output.CLIError
 }
 
-// tolerateBadConfig marks the commands that must still run when config
-// resolution fails. There are exactly two, and both are structural:
+// tolerateBadConfig marks the commands that must still run when the config
+// *path* is unusable (config.ErrConfigPath). It does not forgive a file that
+// exists but fails to parse or validate -- `config init` over one of those
+// would write a config every later command rejects. There are exactly two
+// annotated commands, and both are structural:
 //
 //   - `config path` is the read-only diagnostic you reach for to debug a bad
 //     config path. Hard-failing it removes the tool for the very problem it
@@ -99,7 +102,7 @@ func (a *App) build() *output.CLIError {
 		ConfigPath:   a.Flags.ConfigPath,
 	})
 	if err != nil {
-		return output.NewError(output.CodeBadConfig, "loading config: "+err.Error(), output.ExitUser)
+		return output.NewError(output.CodeBadConfig, "loading config: "+err.Error(), output.ExitUser).WithCause(err)
 	}
 	a.wire(cfg)
 	return nil

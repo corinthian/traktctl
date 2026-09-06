@@ -65,7 +65,7 @@ func Load(f Flags) (*Config, error) {
 		// as a confusing "no client_id".
 		b, rerr := os.ReadFile(path)
 		if rerr != nil {
-			return nil, fmt.Errorf("reading config %s: %w", path, rerr)
+			return nil, fmt.Errorf("reading config %s: %w: %w", path, rerr, ErrConfigPath)
 		}
 		if err := toml.Unmarshal(b, c); err != nil {
 			return nil, err
@@ -101,6 +101,15 @@ func Load(f Flags) (*Config, error) {
 	return c, nil
 }
 
+// ErrConfigPath marks a config failure that is about the *path* -- the named
+// file is missing, unreadable or a directory -- as opposed to the file's
+// contents. The tolerateBadConfig commands forgive only this class: `config
+// path` must still report a bad path and `config init` must still create a
+// missing file, but neither may run over TOML that does not parse or values
+// that fail validation, or `config init` would write a file every later
+// command rejects.
+var ErrConfigPath = errors.New("config path unusable")
+
 // resolveConfigPath resolves the config.toml to read and reports whether the
 // caller named it explicitly.
 //
@@ -126,13 +135,13 @@ func resolveConfigPath(explicit string) (string, bool, error) {
 		switch {
 		case err != nil && errors.Is(err, os.ErrNotExist):
 			if source == "TRAKTCTL_CONFIG" {
-				return "", true, fmt.Errorf("TRAKTCTL_CONFIG points at a missing file: %s", path)
+				return "", true, fmt.Errorf("TRAKTCTL_CONFIG points at a missing file: %s: %w", path, ErrConfigPath)
 			}
-			return "", true, fmt.Errorf("explicit --config path does not exist: %s", path)
+			return "", true, fmt.Errorf("explicit --config path does not exist: %s: %w", path, ErrConfigPath)
 		case err != nil:
-			return "", true, fmt.Errorf("%s is unreadable: %s: %w", source, path, err)
+			return "", true, fmt.Errorf("%s is unreadable: %s: %w: %w", source, path, err, ErrConfigPath)
 		case st.IsDir():
-			return "", true, fmt.Errorf("%s is a directory, not a config file: %s", source, path)
+			return "", true, fmt.Errorf("%s is a directory, not a config file: %s: %w", source, path, ErrConfigPath)
 		}
 		return path, true, nil
 	}

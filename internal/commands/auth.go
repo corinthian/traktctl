@@ -2,10 +2,44 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
+	"net/url"
 
+	"github.com/corinthian/traktctl/internal/cause"
 	"github.com/corinthian/traktctl/internal/output"
+	"github.com/corinthian/traktctl/internal/xhttp"
 	"github.com/spf13/cobra"
 )
+
+// authFailure wraps an OAuth error under the code its cause deserves. A
+// network fault or a body traktctl could not decode used to arrive as
+// AUTH_EXPIRED, which told the user their session had gone and sent them to
+// log in again over something that had nothing to do with their session. The
+// auth package keeps returning a plain error; the classification happens here.
+// Only an error that actually carries a transport or decode cause is
+// reclassified. Classify's default branch is TransportOther, so an OAuth
+// failure that is really about the status — "token endpoint failed: HTTP 401"
+// — would otherwise be relabelled a network fault. A plain status error
+// matches none of the three tests below and keeps the caller's fallback.
+func authFailure(err error, prefix, fallback string, fallbackExit output.ExitCode) *output.CLIError {
+	code, exit := fallback, fallbackExit
+	var urlErr *url.Error
+	var coded cause.Coded
+	classified := errors.As(err, &urlErr) || errors.As(err, &coded) ||
+		xhttp.Classify(err) != cause.TransportOther
+	if !classified {
+		return output.NewError(code, prefix+": "+err.Error(), exit)
+	}
+	switch xhttp.Classify(err) {
+	case cause.Timeout:
+		code, exit = output.CodeTransportTimeout, output.ExitTransport
+	case cause.DNS, cause.TLS, cause.Refused, cause.TransportOther, cause.Cancelled:
+		code, exit = output.CodeTransportFailed, output.ExitTransport
+	case cause.Oversize, cause.Decode:
+		code, exit = output.CodeDecodeError, output.ExitInternal
+	}
+	return output.NewError(code, prefix+": "+err.Error(), exit)
+}
 
 func init() { Register(newAuthCmd) }
 
@@ -28,7 +62,7 @@ func newAuthCmd(app *App) *cobra.Command {
 			}
 			tok, loc, err := app.Auth.LoginDevice(app.ctx(), app.Out.Err, !noBrowser)
 			if err != nil {
-				return output.NewError(output.CodeAuthRequired, "login failed: "+err.Error(), output.ExitAuthMissing)
+				return authFailure(err, "login failed", output.CodeAuthRequired, output.ExitAuthMissing)
 			}
 			payload, _ := json.Marshal(map[string]interface{}{
 				"authorized": true,
@@ -50,7 +84,7 @@ func newAuthCmd(app *App) *cobra.Command {
 				return output.NewError(output.CodeAuthRequired, "not logged in", output.ExitAuthMissing)
 			}
 			if err := app.Auth.Refresh(app.ctx()); err != nil {
-				return output.NewError(output.CodeAuthExpired, "refresh failed: "+err.Error(), output.ExitTrakt)
+				return authFailure(err, "refresh failed", output.CodeAuthExpired, output.ExitTrakt)
 			}
 			tok, loc := app.Auth.Token()
 			payload, _ := json.Marshal(map[string]interface{}{

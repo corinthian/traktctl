@@ -14,7 +14,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/corinthian/traktctl/internal/cause"
+	"github.com/corinthian/traktctl/internal/client"
 	"github.com/corinthian/traktctl/internal/config"
+	"github.com/corinthian/traktctl/internal/xhttp"
 )
 
 // Manager owns the token lifecycle and satisfies the client's TokenSource
@@ -23,6 +26,11 @@ type Manager struct {
 	cfg   *config.Config
 	store *store
 	http  *http.Client
+
+	// bodyLimit bounds every OAuth response read. Zero means client.BodyLimit,
+	// which is the whole tool's single bound; tests shrink it so the boundary
+	// cases do not have to move 64 MiB over loopback.
+	bodyLimit int64
 
 	// errW receives a loud, non-fatal warning when a refreshed token fails to
 	// persist (TC-10): the in-memory token is still set and the current
@@ -68,6 +76,40 @@ func rejectCrossOriginRedirect(req *http.Request, via []*http.Request) error {
 		return fmt.Errorf("refusing cross-origin redirect: %s -> %s", first, req.URL)
 	}
 	return nil
+}
+
+// limit is the response-body bound for every OAuth read.
+func (m *Manager) limit() int64 {
+	if m.bodyLimit > 0 {
+		return m.bodyLimit
+	}
+	return client.BodyLimit
+}
+
+// readFailure marks a body read that broke part-way as a transport failure.
+// Without it xhttp.Classify sees the wrapped io.ErrUnexpectedEOF and calls a
+// broken connection a decode failure, which is the one classification that
+// would send a user hunting for a malformed response.
+type readFailure struct{ err error }
+
+func (r readFailure) Error() string      { return r.err.Error() }
+func (r readFailure) Unwrap() error      { return r.err }
+func (r readFailure) Cause() cause.Cause { return cause.TransportOther }
+
+// readOAuthBody reads a response under the bound and closes it. The returned
+// error wraps its cause — the I/O error, or xhttp.ErrOversize — so a caller
+// upstream can still classify it. Oversize keeps its own cause; anything else
+// is a transport failure.
+func (m *Manager) readOAuthBody(resp *http.Response) ([]byte, error) {
+	data, err := xhttp.ReadBody(resp, m.limit())
+	if err == nil {
+		return data, nil
+	}
+	wrapped := fmt.Errorf("reading the response from %s: %w", resp.Request.URL.Path, err)
+	if errors.Is(err, xhttp.ErrOversize) {
+		return nil, wrapped
+	}
+	return nil, readFailure{wrapped}
 }
 
 // ensureLoaded resolves the active token once: an explicit flag/env access
@@ -245,12 +287,17 @@ func (m *Manager) requestDeviceCode(ctx context.Context) (*DeviceCode, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	// The body is read under the bound before the status is inspected, so a
+	// failed read is never mistaken for a bad status.
+	data, err := m.readOAuthBody(resp)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("device code request failed: HTTP %d", resp.StatusCode)
 	}
 	var dc DeviceCode
-	if err := json.NewDecoder(resp.Body).Decode(&dc); err != nil {
+	if err := xhttp.DecodeOne(data, &dc); err != nil {
 		return nil, err
 	}
 	if dc.Interval <= 0 {
@@ -315,13 +362,17 @@ func (m *Manager) tryDeviceToken(ctx context.Context, body map[string]string) (*
 	if err != nil {
 		return nil, 0, err
 	}
-	defer resp.Body.Close()
+	// The non-200 poll body is discarded under the bound, and a failure to
+	// discard it is an error rather than a clean "keep polling".
+	data, err := m.readOAuthBody(resp)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
 	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, resp.Body)
 		return nil, resp.StatusCode, nil
 	}
 	var t Token
-	if err := json.NewDecoder(resp.Body).Decode(&t); err != nil {
+	if err := xhttp.DecodeOne(data, &t); err != nil {
 		return nil, resp.StatusCode, err
 	}
 	return &t, resp.StatusCode, nil
@@ -339,13 +390,18 @@ func (m *Manager) postToken(ctx context.Context, path string, body map[string]st
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
+	// The read error is returned before the status check: a broken read is not
+	// a bad status, and decoding a partial token body is how a half-written
+	// credential gets stored.
+	data, err := m.readOAuthBody(resp)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("token endpoint %s failed: HTTP %d", path, resp.StatusCode)
 	}
 	var t Token
-	if err := json.Unmarshal(data, &t); err != nil {
+	if err := xhttp.DecodeOne(data, &t); err != nil {
 		return nil, err
 	}
 	return &t, nil
@@ -381,8 +437,11 @@ func (m *Manager) Revoke(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	// A discard that fails is a revoke failure: local state is cleared only
+	// once Trakt has confirmed a clean 200.
+	if _, err := m.readOAuthBody(resp); err != nil {
+		return err
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("revoke failed: HTTP %d", resp.StatusCode)
 	}

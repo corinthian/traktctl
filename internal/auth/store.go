@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/corinthian/traktctl/internal/atomicfile"
 	"github.com/corinthian/traktctl/internal/config"
 	keyring "github.com/zalando/go-keyring"
 )
@@ -148,7 +149,7 @@ func (s *store) save(t *Token) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(s.filePath), 0o700); err != nil {
 		return "", err
 	}
-	if err := config.AtomicWriteFile(s.filePath, b); err != nil {
+	if err := atomicfile.Write(s.filePath, b); err != nil {
 		return "", err
 	}
 	if derr := s.keyDelete(); derr != nil && !errors.Is(derr, keyring.ErrNotFound) {

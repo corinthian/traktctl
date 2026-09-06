@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/corinthian/traktctl/internal/atomicfile"
 	"github.com/corinthian/traktctl/internal/configpath"
 	toml "github.com/pelletier/go-toml/v2"
 )
@@ -274,7 +275,7 @@ func WriteConfigFile(path string, fc FileConfig, force bool) error {
 	}
 	header := "# traktctl configuration — written by `traktctl config init`\n" +
 		"# Holds client_secret in plaintext; keep private (mode 0600).\n\n"
-	return AtomicWriteFile(path, append([]byte(header), b...))
+	return atomicfile.Write(path, append([]byte(header), b...))
 }
 
 // ConfigDir returns ~/.config/traktctl, creating it if needed.

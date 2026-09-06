@@ -59,7 +59,8 @@ var allCodes = []string{
 	CodeBadRequest, CodeBadConfig, CodeAuthRequired, CodeAuthExpired,
 	CodeTraktNotFound, CodeTraktValidation, CodeTraktRateLimited,
 	CodeTraktVIPOnly, CodeTraktLockedUser, CodeTraktDeactivated,
-	CodeTraktServer, CodeTransportTimeout, CodeParseError,
+	CodeTraktServer, CodeTransportTimeout, CodeTransportFailed,
+	CodeParseError, CodeDecodeError,
 	CodePaginationRunaway, CodeNotApplied,
 }
 
@@ -82,7 +83,9 @@ func TestExitForCode(t *testing.T) {
 		CodeAuthExpired:      ExitTrakt,
 		CodeTraktNotFound:    ExitTrakt,
 		CodeTransportTimeout: ExitTransport,
+		CodeTransportFailed:  ExitTransport,
 		CodeParseError:       ExitInternal,
+		CodeDecodeError:      ExitInternal,
 		CodeNotApplied:       ExitNotApplied,
 	}
 	for code, exp := range want {

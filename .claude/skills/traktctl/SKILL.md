@@ -153,7 +153,9 @@ Translation:
 | `TRAKT_LOCKED_USER` | `That account is locked.` |
 | `TRAKT_DEACTIVATED` | `That account is deactivated.` |
 | `TRANSPORT_TIMEOUT` | `Can't reach Trakt right now — connection timed out.` |
-| `PARSE_ERROR` | `Trakt sent back something I couldn't read.` |
+| `TRANSPORT_FAILED` | `Can't reach Trakt right now.` |
+| `PARSE_ERROR` | `I built that request wrong — let me try again.` (bad `--payload` input, or a failed output write) |
+| `DECODE_ERROR` | `Trakt sent back something I couldn't read. Don't retry.` |
 | `PAGINATION_RUNAWAY` | `That's a huge pull (100+ pages). Want me to fetch all of it anyway?` (then add `--really-all`) |
 | `NOT_APPLIED` | `Trakt couldn't match {that title / any of those items} — nothing was changed.` Then re-resolve via `search` and offer the corrected match. |
 

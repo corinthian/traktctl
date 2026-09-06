@@ -16,8 +16,8 @@ const (
 	ExitOK          ExitCode = 0 // success
 	ExitUser        ExitCode = 1 // bad flags, missing args, invalid config
 	ExitTrakt       ExitCode = 2 // Trakt returned non-2xx
-	ExitTransport   ExitCode = 3 // TLS, DNS, timeout
-	ExitInternal    ExitCode = 4 // internal traktctl error
+	ExitTransport   ExitCode = 3 // TLS, DNS, timeout, any transport failure
+	ExitInternal    ExitCode = 4 // internal traktctl error, or an undecodable response
 	ExitAuthMissing ExitCode = 5 // auth required and never logged in
 	ExitNotApplied  ExitCode = 6 // Trakt returned 2xx but applied nothing
 )
@@ -32,18 +32,31 @@ const (
 	CodeBadRequest = "BAD_REQUEST"
 	// CodeBadConfig is the config family only: an unreadable/invalid config
 	// file, a missing credential in env/config.toml. Never a usage error.
-	CodeBadConfig         = "BAD_CONFIG"
-	CodeAuthRequired      = "AUTH_REQUIRED"
-	CodeAuthExpired       = "AUTH_EXPIRED"
-	CodeTraktNotFound     = "TRAKT_NOT_FOUND"
-	CodeTraktValidation   = "TRAKT_VALIDATION"
-	CodeTraktRateLimited  = "TRAKT_RATE_LIMITED"
-	CodeTraktVIPOnly      = "TRAKT_VIP_ONLY"
-	CodeTraktLockedUser   = "TRAKT_LOCKED_USER"
-	CodeTraktDeactivated  = "TRAKT_DEACTIVATED"
-	CodeTraktServer       = "TRAKT_SERVER_ERROR"
-	CodeTransportTimeout  = "TRANSPORT_TIMEOUT"
-	CodeParseError        = "PARSE_ERROR"
+	CodeBadConfig        = "BAD_CONFIG"
+	CodeAuthRequired     = "AUTH_REQUIRED"
+	CodeAuthExpired      = "AUTH_EXPIRED"
+	CodeTraktNotFound    = "TRAKT_NOT_FOUND"
+	CodeTraktValidation  = "TRAKT_VALIDATION"
+	CodeTraktRateLimited = "TRAKT_RATE_LIMITED"
+	CodeTraktVIPOnly     = "TRAKT_VIP_ONLY"
+	CodeTraktLockedUser  = "TRAKT_LOCKED_USER"
+	CodeTraktDeactivated = "TRAKT_DEACTIVATED"
+	CodeTraktServer      = "TRAKT_SERVER_ERROR"
+	// CodeTransportTimeout is a genuine deadline: the request timed out. It
+	// says nothing about whether a mutation was applied.
+	CodeTransportTimeout = "TRANSPORT_TIMEOUT"
+	// CodeTransportFailed is every other transport failure — DNS, TLS,
+	// refused, a refused or over-cap redirect, a body read that broke
+	// part-way, a cancelled request.
+	CodeTransportFailed = "TRANSPORT_FAILED"
+	// CodeParseError is *input* and internal-marshal failures: a bad
+	// --payload, a failed request-body encode, a failed output write. A
+	// response body traktctl cannot read is CodeDecodeError, not this.
+	CodeParseError = "PARSE_ERROR"
+	// CodeDecodeError is a response Trakt sent that traktctl could not
+	// decode, or one over the size bound. Deterministic, so it carries no
+	// retry hint.
+	CodeDecodeError       = "DECODE_ERROR"
 	CodePaginationRunaway = "PAGINATION_RUNAWAY"
 	// CodeNotApplied: Trakt accepted the request (2xx) and applied none of it.
 	// Distinct from TRAKT_NOT_FOUND, which is HTTP-404 semantics.
@@ -72,7 +85,9 @@ var codeExit = map[string]ExitCode{
 	CodeTraktDeactivated:  ExitTrakt,
 	CodeTraktServer:       ExitTrakt,
 	CodeTransportTimeout:  ExitTransport,
+	CodeTransportFailed:   ExitTransport,
 	CodeParseError:        ExitInternal,
+	CodeDecodeError:       ExitInternal,
 	CodeNotApplied:        ExitNotApplied,
 }
 

@@ -146,7 +146,7 @@ Default is the JSON envelope:
 { "ok": true, "data": { ... }, "meta": { "endpoint": "...", "duration_ms": 187, "pagination": { ... } } }
 ```
 
-Errors use `{ "ok": false, "error": { "code", "message", "http_status", "hint" } }`, on stdout. Exit codes: 0 ok, 1 user error, 2 Trakt non-2xx, 3 transport, 4 internal, 5 auth missing, 6 nothing applied.
+Errors use `{ "ok": false, "error": { "code", "message", "http_status", "hint" } }`, on stdout. Exit codes: 0 ok, 1 user error, 2 Trakt non-2xx, 3 transport, 4 internal traktctl error or a response from Trakt traktctl could not decode, 5 auth missing, 6 nothing applied.
 
 The exit class is derived from `error.code`, never paired by hand:
 
@@ -158,8 +158,10 @@ The exit class is derived from `error.code`, never paired by hand:
 | `AUTH_REQUIRED` | 5 | not logged in |
 | `AUTH_EXPIRED` | 2 | token invalid or refresh failed |
 | `TRAKT_NOT_FOUND` `TRAKT_VALIDATION` `TRAKT_RATE_LIMITED` `TRAKT_VIP_ONLY` `TRAKT_LOCKED_USER` `TRAKT_DEACTIVATED` `TRAKT_SERVER_ERROR` | 2 | Trakt refused the request |
-| `TRANSPORT_TIMEOUT` | 3 | TLS, DNS, timeout |
-| `PARSE_ERROR` | 4 | traktctl internal failure |
+| `TRANSPORT_TIMEOUT` | 3 | the request timed out |
+| `TRANSPORT_FAILED` | 3 | DNS, TLS, refused, or any other transport failure |
+| `PARSE_ERROR` | 4 | traktctl internal failure: bad `--payload` input, or a failed output write |
+| `DECODE_ERROR` | 4 | Trakt sent a response traktctl could not decode, or one over the size bound |
 | `NOT_APPLIED` | 6 | Trakt answered 2xx and applied nothing |
 
 `--raw` passes Trakt's body through, `--ndjson` emits one object per line, `--terse` emits a one-line summary.

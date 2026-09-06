@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+
+	"github.com/corinthian/traktctl/internal/rawjson"
 )
 
 // ExitCode is the process exit status. Stable per the spec's error model.
@@ -296,30 +298,36 @@ func (w *Writer) writeJSON(v interface{}) error {
 	return enc.Encode(v)
 }
 
-// writeRaw passes the Trakt body through verbatim (pretty-printed if it parses).
+// writeRaw passes the Trakt body through verbatim, pretty-printed without
+// decoding it: rawjson.Indent operates on the bytes, so key order and number
+// literals (including integers wider than a float64) survive exactly. There
+// is no decode-failure fallback -- by the time a body reaches here it has
+// already gone through client.doOnce's strict decode (contract 2.3), so an
+// invalid body is a response-time DECODE_ERROR and never gets this far.
 func (w *Writer) writeRaw(data json.RawMessage) error {
 	if len(data) == 0 {
 		return nil
 	}
-	var v interface{}
-	if err := json.Unmarshal(data, &v); err != nil {
-		_, werr := w.Out.Write(append([]byte(data), '\n'))
-		return werr
+	out, err := rawjson.Indent(data)
+	if err != nil {
+		return err
 	}
-	return w.writeJSON(v)
+	_, werr := w.Out.Write(append(out, '\n'))
+	return werr
 }
 
-// writeNDJSON emits one line per element of a top-level array. A non-array body
-// is emitted as a single line.
+// writeNDJSON emits one line per element of a top-level array, split on the
+// bytes so key order and number literals survive. A non-array body is emitted
+// as a single compact line.
 func (w *Writer) writeNDJSON(data json.RawMessage) error {
 	if len(data) == 0 {
 		return nil
 	}
-	var arr []json.RawMessage
-	if err := json.Unmarshal(data, &arr); err != nil {
+	els, ok := rawjson.SplitArray(data)
+	if !ok {
 		return w.writeCompactLine(data)
 	}
-	for _, el := range arr {
+	for _, el := range els {
 		if err := w.writeCompactLine(el); err != nil {
 			return err
 		}
@@ -328,13 +336,12 @@ func (w *Writer) writeNDJSON(data json.RawMessage) error {
 }
 
 func (w *Writer) writeCompactLine(raw json.RawMessage) error {
-	var v interface{}
-	if err := json.Unmarshal(raw, &v); err != nil {
+	out, err := rawjson.Compact(raw)
+	if err != nil {
 		return err
 	}
-	enc := json.NewEncoder(w.Out)
-	enc.SetEscapeHTML(false)
-	return enc.Encode(v) // Encode appends a newline
+	_, werr := w.Out.Write(append(out, '\n'))
+	return werr
 }
 
 func (w *Writer) writeTerse(r *Result) error {

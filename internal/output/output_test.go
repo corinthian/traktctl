@@ -52,6 +52,87 @@ func TestEmitNDJSON(t *testing.T) {
 	}
 }
 
+// bigInt is 2^53+1, the smallest integer a float64 cannot represent exactly.
+// A decode-and-re-encode round trip through interface{} silently rewrites it;
+// every rawjson-backed path must not.
+const bigInt = "9007199254740993"
+
+// TestRawPreservesKeyOrderAndBigIntegers: --raw indents the bytes without
+// decoding them, so non-alphabetical key order and the big integer both
+// survive byte-exact.
+func TestRawPreservesKeyOrderAndBigIntegers(t *testing.T) {
+	var out bytes.Buffer
+	w := New(&out, &out, FormatRaw)
+	body := json.RawMessage(`{"zulu":1,"alpha":` + bigInt + `,"mike":3}`)
+	if err := w.Emit(&Result{Data: body}); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, bigInt) {
+		t.Errorf("big integer did not survive --raw:\n%s", got)
+	}
+	z, a, m := strings.Index(got, "zulu"), strings.Index(got, "alpha"), strings.Index(got, "mike")
+	if !(z < a && a < m) {
+		t.Errorf("key order was not preserved:\n%s", got)
+	}
+}
+
+// TestNDJSONPreservesBigIntegers: the compacted per-row output must not lose
+// precision either.
+func TestNDJSONPreservesBigIntegers(t *testing.T) {
+	var out bytes.Buffer
+	w := New(&out, &out, FormatNDJSON)
+	body := json.RawMessage(`[{"n":` + bigInt + `}]`)
+	if err := w.Emit(&Result{Data: body}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), bigInt) {
+		t.Errorf("big integer did not survive --ndjson: %q", out.String())
+	}
+}
+
+// TestNDJSONOnBareArraySplitsDirectly: no "records" unwrap step in traktctl --
+// a bare top-level array is split as-is.
+func TestNDJSONOnBareArraySplitsDirectly(t *testing.T) {
+	var out bytes.Buffer
+	w := New(&out, &out, FormatNDJSON)
+	if err := w.Emit(&Result{Data: json.RawMessage(`[{"a":1},{"a":2},{"a":3}]`)}); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 3 {
+		t.Errorf("expected 3 lines, got %d: %q", len(lines), out.String())
+	}
+}
+
+// TestNDJSONOnNonArrayEmitsOneLine pins the existing fallback: a non-array
+// body renders as a single compact line, not an error.
+func TestNDJSONOnNonArrayEmitsOneLine(t *testing.T) {
+	var out bytes.Buffer
+	w := New(&out, &out, FormatNDJSON)
+	if err := w.Emit(&Result{Data: json.RawMessage(`{"a":1}`)}); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 1 {
+		t.Errorf("expected 1 line, got %d: %q", len(lines), out.String())
+	}
+}
+
+// TestTersePreservesBigIntegers: the --terse compact fallback (no Terse
+// string set) goes through writeCompactLine too.
+func TestTersePreservesBigIntegers(t *testing.T) {
+	var out bytes.Buffer
+	w := New(&out, &out, FormatTerse)
+	body := json.RawMessage(`{"n":` + bigInt + `}`)
+	if err := w.Emit(&Result{Data: body}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), bigInt) {
+		t.Errorf("big integer did not survive --terse fallback: %q", out.String())
+	}
+}
+
 // allCodes is every value in the error-code enumeration. A new code added to
 // output.go without a codeExit entry fails TestExitForCodeCoversEnum — the
 // mapping is the contract, not an afterthought at the call site.

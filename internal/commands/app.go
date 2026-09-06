@@ -19,6 +19,7 @@ import (
 	"github.com/corinthian/traktctl/internal/config"
 	"github.com/corinthian/traktctl/internal/output"
 	"github.com/corinthian/traktctl/internal/xduration"
+	"github.com/corinthian/traktctl/internal/xhttp"
 	"github.com/spf13/cobra"
 )
 
@@ -382,8 +383,9 @@ func (a *App) confirmed() bool {
 	return a.Flags.Confirm || os.Getenv("TRAKTCTL_CONFIRM") == "1"
 }
 
-// parsePayload decodes a --payload JSON string into a generic value.
-func parsePayload(s string) (interface{}, error) {
+// parsePayload validates a --payload JSON string and returns the caller's own
+// bytes verbatim.
+func parsePayload(s string) (json.RawMessage, error) {
 	if s == "" {
 		// Name the lookup-vs-mutation split here: this is the error a caller
 		// following the old (wrong) --id examples actually hits.
@@ -396,8 +398,12 @@ func parsePayload(s string) (interface{}, error) {
 
 // resolvePayload is the single entry point every payload-taking command uses:
 // exactly one of --payload / --payload-file may be set. --payload-file reads
-// from the named path, or stdin when the path is "-".
-func resolvePayload(payload, payloadFile string) (interface{}, error) {
+// from the named path, or stdin when the path is "-". The returned bytes are
+// exactly what the caller supplied -- decodeJSON validates them (2.4: a
+// number like 2^53+1 must reach Trakt exactly as typed) but never re-encodes
+// them, so client.go's json.Marshal(opts.Body) on the resulting
+// json.RawMessage emits those same bytes unchanged.
+func resolvePayload(payload, payloadFile string) (json.RawMessage, error) {
 	if payload != "" && payloadFile != "" {
 		return nil, output.UsageError(
 			"--payload and --payload-file are mutually exclusive")
@@ -425,13 +431,16 @@ func readPayloadFile(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-// decodeJSON is the shared JSON decode behind both --payload and
+// decodeJSON is the shared JSON validation behind both --payload and
 // --payload-file, with the source named in the error for a caller who mixed
-// up which one they used.
-func decodeJSON(data []byte, source string) (interface{}, error) {
+// up which one they used. It validates through xhttp.DecodeOne (UseNumber, and
+// strict about trailing content -- '{"a":1} junk' is still rejected) but
+// returns data itself, unmodified: the caller's bytes are what reaches Trakt,
+// not a re-encoded value, so a 2^53+1 literal survives exactly as typed.
+func decodeJSON(data []byte, source string) (json.RawMessage, error) {
 	var v interface{}
-	if err := json.Unmarshal(data, &v); err != nil {
+	if err := xhttp.DecodeOne(data, &v); err != nil {
 		return nil, output.UsageError("invalid " + source + " JSON: " + err.Error())
 	}
-	return v, nil
+	return json.RawMessage(data), nil
 }

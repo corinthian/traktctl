@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -224,5 +225,64 @@ func TestEmitErrorDerivesExit(t *testing.T) {
 	// a config code) and must not be rewritten by the map.
 	if got := w.EmitError(&CLIError{Code: CodeBadConfig, Message: "revoke failed", Exit: ExitInternal}); got != ExitInternal {
 		t.Errorf("explicit exit = %d, want %d", got, ExitInternal)
+	}
+}
+
+// failingWriter always fails, so EmitError's own write can be forced to fail
+// without a real broken pipe.
+type failingWriter struct{}
+
+func (failingWriter) Write(p []byte) (int, error) { return 0, errors.New("disk full") }
+
+// TestErrorPathWriteFailureExitsInternal: a writer that always fails makes
+// EmitError return ExitInternal and print exactly one plain-text line on
+// stderr naming both the write failure and the error it was trying to report.
+// Before this change the write error was discarded and the exit stayed
+// whatever the original error's class was (output.go:248, :263).
+func TestErrorPathWriteFailureExitsInternal(t *testing.T) {
+	var errOut bytes.Buffer
+	w := New(failingWriter{}, &errOut, FormatJSON)
+	got := w.EmitError(&CLIError{Code: CodeAuthRequired, Message: "nope"})
+	if got != ExitInternal {
+		t.Errorf("exit = %d, want %d", got, ExitInternal)
+	}
+	lines := strings.Split(strings.TrimSpace(errOut.String()), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected exactly one stderr line, got %d: %q", len(lines), errOut.String())
+	}
+	if !strings.Contains(lines[0], "cannot write output") || !strings.Contains(lines[0], "disk full") ||
+		!strings.Contains(lines[0], CodeAuthRequired) {
+		t.Errorf("stderr line = %q, want it to name the write failure and the original code", lines[0])
+	}
+}
+
+// TestRawBodyPathWriteFailureExitsInternal: the --raw RawBody branch
+// (output.go:264-266) fails the same way.
+func TestRawBodyPathWriteFailureExitsInternal(t *testing.T) {
+	var errOut bytes.Buffer
+	w := New(failingWriter{}, &errOut, FormatRaw)
+	got := w.EmitError(&CLIError{Code: CodeNotApplied, Message: "nope", RawBody: json.RawMessage(`{"ok":true}`)})
+	if got != ExitInternal {
+		t.Errorf("exit = %d, want %d", got, ExitInternal)
+	}
+	if !strings.Contains(errOut.String(), "cannot write output") {
+		t.Errorf("stderr = %q, want it to report the write failure", errOut.String())
+	}
+}
+
+// TestSuccessPathWriteFailureUnchanged: the success path's existing
+// PARSE_ERROR/exit-4 behaviour (output.go:234-ish) is untouched by this item.
+func TestSuccessPathWriteFailureUnchanged(t *testing.T) {
+	w := New(failingWriter{}, &bytes.Buffer{}, FormatJSON)
+	err := w.Emit(&Result{Data: json.RawMessage(`{"a":1}`)})
+	var cerr *CLIError
+	if !errors.As(err, &cerr) {
+		t.Fatalf("err type = %T, want *CLIError", err)
+	}
+	if cerr.Code != CodeParseError {
+		t.Errorf("code = %q, want %q", cerr.Code, CodeParseError)
+	}
+	if cerr.exitOrInternal() != ExitInternal {
+		t.Errorf("exit = %v, want %v", cerr.exitOrInternal(), ExitInternal)
 	}
 }

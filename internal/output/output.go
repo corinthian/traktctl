@@ -262,7 +262,9 @@ func (w *Writer) Emit(r *Result) error {
 // body untouched, leaving the exit code to carry the verdict.
 func (w *Writer) EmitError(e *CLIError) ExitCode {
 	if w.Format == FormatRaw && len(e.RawBody) > 0 {
-		_ = w.writeRaw(e.RawBody)
+		if werr := w.writeRaw(e.RawBody); werr != nil {
+			return w.reportWriteFailure(werr, e.Code)
+		}
 		return e.exitOrInternal()
 	}
 	env := Envelope{
@@ -277,8 +279,22 @@ func (w *Writer) EmitError(e *CLIError) ExitCode {
 	if e.Endpoint != "" || e.DurationMS != 0 {
 		env.Meta = &Meta{Endpoint: e.Endpoint, DurationMS: e.DurationMS}
 	}
-	_ = w.writeJSON(env)
+	if werr := w.writeJSON(env); werr != nil {
+		return w.reportWriteFailure(werr, e.Code)
+	}
 	return e.exitOrInternal()
+}
+
+// reportWriteFailure is what a failed error-envelope write becomes: today
+// (both call sites above) that write error is discarded and the exit code
+// stays whatever the original error's class was -- reporting a failure to
+// even tell the caller about the failure as if nothing had gone wrong. The
+// envelope is not retried; one plain-text line goes to stderr naming both the
+// write failure and the error it was trying to report, and the process exits
+// ExitInternal.
+func (w *Writer) reportWriteFailure(werr error, origCode string) ExitCode {
+	fmt.Fprintf(w.Err, "traktctl: cannot write output: %s (original error: %s)\n", werr, origCode)
+	return ExitInternal
 }
 
 // exitOrInternal guards against a zero-value Exit silently meaning success:

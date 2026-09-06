@@ -36,6 +36,16 @@ func wantErr(t *testing.T, cerr *output.CLIError, code string, exit output.ExitC
 	}
 }
 
+// TestHumanBytesRendersBodyLimitAsMiB pins the gap the previous executor
+// named: BodyLimit itself (64 MiB) must render as the contract writes it,
+// "64 MiB", not a raw byte count -- this is what TestOversizeBodyIsDecodeError
+// asserts indirectly via a shrunk bound, but never against the real constant.
+func TestHumanBytesRendersBodyLimitAsMiB(t *testing.T) {
+	if got := humanBytes(BodyLimit); got != "64 MiB" {
+		t.Errorf("humanBytes(BodyLimit) = %q, want %q", got, "64 MiB")
+	}
+}
+
 func TestOversizeBodyIsDecodeError(t *testing.T) {
 	srv := serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`"` + strings.Repeat("a", 200) + `"`))

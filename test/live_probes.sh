@@ -34,3 +34,15 @@ echo "## person (B1, read-only, no auth required)"
 for ep in people/bryan-cranston people/bryan-cranston/movies people/bryan-cranston/shows people/bryan-cranston/lists; do
   printf "GET /%-28s %s\n" "$ep" "$(code "${H[@]}" https://api.trakt.tv/$ep)"
 done
+
+echo "## B2 list group (all reads, optional auth; nothing mutated)"
+for ep in lists/trending lists/popular; do
+  printf "GET  /%-28s %s\n" "$ep" "$(code "${H[@]}" "${A[@]}" https://api.trakt.tv/$ep)"
+done
+# Resolve a real list id off trending so get/items/likes probe an existing
+# list rather than a guessed one; falls back to a 404 probe id if that fails.
+LID=$(curl -s "${H[@]}" "${A[@]}" "https://api.trakt.tv/lists/trending?limit=1" | jq -r '.[0].list.ids.trakt // empty')
+[ -z "$LID" ] && LID=0
+for ep in "lists/$LID" "lists/$LID/items" "lists/$LID/likes"; do
+  printf "GET  /%-28s %s\n" "$ep" "$(code "${H[@]}" "${A[@]}" https://api.trakt.tv/$ep)"
+done

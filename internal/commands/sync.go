@@ -30,6 +30,7 @@ func newSyncCmd(app *App) *cobra.Command {
 		},
 	})
 
+	root.AddCommand(app.syncExport())
 	root.AddCommand(app.syncCollection())
 	root.AddCommand(app.syncWatched())
 	root.AddCommand(app.syncHistory())

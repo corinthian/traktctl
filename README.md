@@ -112,6 +112,7 @@ traktctl show next-episode --id breaking-bad
 traktctl season episodes --show breaking-bad --season 1
 traktctl user watchlist --type movies
 traktctl sync activities
+traktctl sync export --dir ./trakt-backup
 traktctl calendar all-movies --start 2026-06-26 --days 7
 ```
 
@@ -134,7 +135,7 @@ Every command is `traktctl <group> <verb> [--flags]`. Run `traktctl <group> --he
 - **episode** — `summary`, `comments`, `lists`, `people`, `ratings`, `stats`, `translations`, `videos`, `watching`.
 - **calendar** — upcoming releases; `all-*` are public, `my-*` are your personal calendar: `shows`, `new-shows`, `premieres`, `finales`, `movies`, `dvd`, `streaming` (each in `all-`/`my-` form). Take `--start DATE --days N`.
 - **recommend** — personalized: `movies`, `shows`, plus `hide-movie`/`hide-show` to suppress a title.
-- **sync** — personal data reads + mutations: `activities` (cheap change-poll), `collection`, `watched`, `history`, `ratings`, `watchlist`, `favorites`, `playback`. Reads support `get`; `add` is idempotent and unconfirmed, `remove` and the watchlist/favorites `settings`/`reorder`/`update-item` verbs gate behind `--confirm`. `watched` is read-only (mutate seen-status via `history`); `playback` has `get`/`remove` only.
+- **sync** — personal data reads + mutations: `activities` (cheap change-poll), `export` (whole-account dump: every kind, `--all` implied and the page cap lifted, `--dir` writes one JSON file per kind atomically), `collection`, `watched`, `history`, `ratings`, `watchlist`, `favorites`, `playback`. Reads support `get`; `add` is idempotent and unconfirmed, `remove` and the watchlist/favorites `settings`/`reorder`/`update-item` verbs gate behind `--confirm`. `watched` is read-only (mutate seen-status via `history`); `playback` has `get`/`remove` only.
 - **user** — profile and personal data (44 verbs):
   - reads: `profile`, `settings`, `stats`, `watchlist`, `watched`, `history`, `ratings`, `collection`, `favorites`, `comments`, `notes`, `likes`, `lists`, `watching`, `hidden`, `saved-filters`.
   - list management: `list`, `list-items`, `list-create`, `list-delete`, `list-update`, `list-items-add`, `list-items-remove`, `list-items-reorder`, `list-item-update`, `lists-reorder`, `list-like`/`list-unlike`, `list-comments`, `list-report`.

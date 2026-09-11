@@ -56,6 +56,18 @@ func summarizeObject(data json.RawMessage) string {
 		}
 	}
 
+	// A filmography response (person movies/shows, movie/show/season/episode
+	// people): {"cast":[...], "crew":{"department":[...]}}. Neither key
+	// carries a title/name/item_count, so inferShape below sees nothing and
+	// this would otherwise fall through to "" — a real regression for a
+	// shape whose whole point is "here is a non-empty credit list".
+	if _, hasCast := m["cast"]; hasCast {
+		return summarizeFilmography(m)
+	}
+	if _, hasCrew := m["crew"]; hasCrew {
+		return summarizeFilmography(m)
+	}
+
 	// Self-identifying bare object: when the object carries its own shape fields
 	// at the top level (e.g. a single list = name+item_count, which ALSO nests a
 	// `user` owner key), render it directly before the wrapper-unwrap loop so the
@@ -184,6 +196,59 @@ func summarizeKnown(shape string, raw json.RawMessage) string {
 		return ""
 	}
 	return ""
+}
+
+// summarizeFilmography renders a cast/crew credit map ({"cast":[...],
+// "crew":{"department":[...]}}) — the shape returned by person movies/shows
+// and by movie/show/season/episode people. Never returns "": an empty
+// filmography is a real, non-error answer ("no credits"), not an unknown
+// shape to fall back to raw JSON for.
+func summarizeFilmography(m map[string]json.RawMessage) string {
+	castN := arrLen(m["cast"])
+	crewN := 0
+	if raw, ok := m["crew"]; ok {
+		var depts map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &depts); err == nil {
+			for _, d := range depts {
+				crewN += arrLen(d)
+			}
+		}
+	}
+	switch {
+	case castN > 0 && crewN > 0:
+		return fmt.Sprintf("%d credits (%s, %s)", castN+crewN, plural(castN, "cast"), plural(crewN, "crew"))
+	case castN > 0:
+		return plural(castN, "cast") + " credit" + plural1(castN)
+	case crewN > 0:
+		return plural(crewN, "crew") + " credit" + plural1(crewN)
+	default:
+		return "no credits"
+	}
+}
+
+// plural renders "N label" (e.g. "1 cast", "3 crew").
+func plural(n int, label string) string {
+	return strconv.Itoa(n) + " " + label
+}
+
+// plural1 returns "" for n==1, "s" otherwise, for a trailing noun.
+func plural1(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// arrLen returns the length of a JSON array field, or 0 if absent/not an array.
+func arrLen(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var arr []json.RawMessage
+	if err := json.Unmarshal(raw, &arr); err != nil {
+		return 0
+	}
+	return len(arr)
 }
 
 // appendWatching adds a " · N watching" suffix when the body carries a watcher

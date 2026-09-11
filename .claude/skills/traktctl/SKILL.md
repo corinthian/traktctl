@@ -175,7 +175,7 @@ Exit-code fallback when no code is parseable: 1 → bad request on my end, 2 →
 
 ---
 
-## Command Surface (v1 — 11 groups)
+## Command Surface (v1 — 12 groups)
 
 Group/verb names are stable; pull exact flags from `traktctl <group> <verb> --llm`. Pattern: `traktctl <group> <verb> [--flags]`.
 
@@ -190,6 +190,11 @@ Group/verb names are stable; pull exact flags from `traktctl <group> <verb> --ll
 
 ### movie / show — title detail + discovery
 Same shape (show adds episode-aware verbs). Discovery lists: `trending`, `popular`, `anticipated`, `favorited`, `played`, `watched`, `collected`, `streaming`, `updates` (movie also `boxoffice`). Single title: `get`, `aliases`, `translations`, `people` (cast/crew), `ratings`, `related`, `stats`, `studios`, `videos`, `comments`, `lists`, `sentiments`, `watching` (movie `releases`; show `certifications`). Show-only: `progress` (how far through a show), `next-episode` (what's next to watch — empty if none), `last-episode`. "What's <show> about" → `show get`. "What's next for <show>" → `show next-episode`.
+
+### person — detail, filmography, list membership
+`get` (bio/detail), `movies`/`shows` (filmography: cast/crew credit map), `lists` (public lists this person appears on). All take the global `--id`/`--id-type` like `movie get`/`show get` — there's no name-based lookup on `person get` itself, so resolve a name first.
+
+**"Who is in X" vs "what else has she been in" is two different groups, not two flags on one.** "Who is in X" (a title's cast) is already built: `movie people` / `show people`. "What else has she been in" (a person's filmography) is `person movies` / `person shows`, resolving the person via `search query --type person` first — never invent a name-search flag on `person get`.
 
 ### season / episode — within a show
 `season summary|info|episodes|people|ratings|stats|comments|videos|...` (takes `--show --season`). `episode summary|comments|ratings|...` (takes `--show --season --episode`). "List season 1 of <show>" → `season episodes --show <slug> --season 1`.
@@ -214,7 +219,7 @@ Same shape (show adds episode-aware verbs). Discovery lists: `trending`, `popula
 
 ## Not Built Yet (v2)
 
-If the user asks for one of these, say it's not in traktctl yet (don't construct a command that will fail): `checkin`, `cert`, `comment`, `list` (curated/public lists — distinct from `user lists`), `media`, `note`, `person`, `scrobble`, the `country`/`genre`/`language`/`network` lookups, and `bulk export`. E.g. "Trakt has the data but traktctl doesn't expose people/cast lookup yet — it's a planned v2 group."
+If the user asks for one of these, say it's not in traktctl yet (don't construct a command that will fail): `checkin`, `cert`, `comment`, `list` (curated/public lists — distinct from `user lists`), `media`, `note`, `scrobble`, the `country`/`genre`/`language`/`network` lookups, and `bulk export`. E.g. "Trakt has the data but traktctl doesn't expose scrobble/checkin yet — it's a planned v2 group."
 
 ---
 

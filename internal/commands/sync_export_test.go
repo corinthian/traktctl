@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -439,6 +441,67 @@ func TestSyncExportPaginatesHistory(t *testing.T) {
 		if got, _ := entry["count"].(float64); int(got) != totalHistory {
 			t.Errorf("stats row count for history = %v, want %d", entry["count"], totalHistory)
 		}
+	}
+}
+
+// TestSyncExportInCommandTree covers the ground rule that the new command is
+// discoverable: `traktctl commands` (and `--llm`) must list `sync export`.
+func TestSyncExportInCommandTree(t *testing.T) {
+	root, _ := NewRoot()
+	tree := buildCommandTree(root)
+	for _, group := range tree.Subcommands {
+		if group.Name != "sync" {
+			continue
+		}
+		for _, verb := range group.Subcommands {
+			if verb.Name == "export" {
+				if verb.Summary == "" {
+					t.Error("`sync export` has no summary in the command tree")
+				}
+				return
+			}
+		}
+		t.Fatalf("`sync export` missing from the sync group: %+v", group.Subcommands)
+	}
+	t.Fatal("sync group missing from the command tree")
+}
+
+// TestSyncExportTerseStdout drives the real --terse write path end to end
+// (runRoot decodes stdout as JSON, so it cannot see this): one line per kind
+// on stdout, and no JSON envelope.
+func TestSyncExportTerseStdout(t *testing.T) {
+	fake := &exportServer{bodies: map[string]string{
+		"/sync/watched/movies": `[{"plays":1},{"plays":2}]`,
+	}}
+	srv := newExportServer(t, fake)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TRAKTCTL_CONFIG", "")
+
+	root, app := NewRoot()
+	var out bytes.Buffer
+	app.Out = output.New(&out, io.Discard, output.FormatJSON) // --terse resets the format in build()
+	root.SetArgs([]string{"--client-id", "cid", "--access-token", "tok", "--base-url", srv.URL,
+		"--terse", "sync", "export"})
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("sync export --terse = %v, want success", err)
+	}
+
+	got := strings.TrimRight(out.String(), "\n")
+	if strings.HasPrefix(strings.TrimSpace(got), "{") {
+		t.Fatalf("--terse emitted an envelope, not a summary:\n%s", got)
+	}
+	lines := strings.Split(got, "\n")
+	if len(lines) != len(exportKinds)+1 {
+		t.Fatalf("--terse = %d lines, want %d (one per kind plus the total):\n%s",
+			len(lines), len(exportKinds)+1, got)
+	}
+	if lines[0] != "watched_movies: 2" {
+		t.Errorf("first line = %q, want %q", lines[0], "watched_movies: 2")
+	}
+	if !strings.Contains(lines[len(lines)-1], "rows") {
+		t.Errorf("last line = %q, want the run total", lines[len(lines)-1])
 	}
 }
 

@@ -61,10 +61,27 @@ func summarizeObject(data json.RawMessage) string {
 	// `user` owner key), render it directly before the wrapper-unwrap loop so the
 	// nested owner does not win. Without this, `user list`/`user lists --terse`
 	// would print the list OWNER instead of the list NAME.
+	//
+	// This must run before the cast/crew check below: a title can legitimately
+	// carry a top-level "cast" key alongside its own title/year (Trakt does not
+	// promise it never will), and a real title/year object must still summarise
+	// as a title, not get reinterpreted as a filmography.
 	if shape := inferShape(m); shape != "" {
 		if s := summarizeKnown(shape, data); s != "" {
 			return s
 		}
+	}
+
+	// A filmography response (person movies/shows, movie/show/season/episode
+	// people): {"cast":[...], "crew":{"department":[...]}}. Neither key
+	// carries a title/name/item_count, so inferShape above sees nothing and
+	// this would otherwise fall through to "" — a real regression for a
+	// shape whose whole point is "here is a non-empty credit list".
+	if _, hasCast := m["cast"]; hasCast {
+		return summarizeFilmography(m)
+	}
+	if _, hasCrew := m["crew"]; hasCrew {
+		return summarizeFilmography(m)
 	}
 
 	// Unwrap a typed wrapper: {"type":"movie","movie":{…}} or a list/history
@@ -184,6 +201,128 @@ func summarizeKnown(shape string, raw json.RawMessage) string {
 		return ""
 	}
 	return ""
+}
+
+// filmographyNameLimit caps how many names summarizeFilmography spells out
+// before collapsing the rest into "(+N more)" — house style for any credit
+// list, matching the single-name-plus-count convention summarize() already
+// uses for a bare array (see summarize()'s "(+%d more)" branch above).
+const filmographyNameLimit = 2
+
+// summarizeFilmography renders a cast/crew credit map ({"cast":[...],
+// "crew":{"department":[...]}}) — the shape returned by person movies/shows
+// and by movie/show/season/episode people — as names plus a count, e.g.
+// "Bryan Cranston, Aaron Paul (+2 more)", never as a bare count: the count is
+// a suffix, not a replacement for the names a caller actually wants.
+//
+// Returns "" (fall back to raw JSON) when the shape doesn't decode the way
+// this function expects — crew present but not a department map, or cast
+// entries that don't carry a recognizable name — rather than misreporting an
+// unrecognized shape as "no credits". An empty-but-well-formed filmography
+// (both arrays present and empty) is a real, non-error answer: "no credits".
+func summarizeFilmography(m map[string]json.RawMessage) string {
+	castN := arrLen(m["cast"])
+	crewN := 0
+	if raw, ok := m["crew"]; ok {
+		var depts map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &depts); err != nil {
+			return ""
+		}
+		for _, d := range depts {
+			crewN += arrLen(d)
+		}
+	}
+	total := castN + crewN
+
+	if castN > 0 {
+		names := creditNames(m["cast"], filmographyNameLimit)
+		if len(names) == 0 {
+			// Cast entries exist but none decoded into a recognizable
+			// person/movie/show name -- an unrecognized shape, not "no
+			// credits".
+			return ""
+		}
+		joined := strings.Join(names, ", ")
+		if total > len(names) {
+			return fmt.Sprintf("%s (+%d more)", joined, total-len(names))
+		}
+		return joined
+	}
+	if crewN > 0 {
+		return plural(crewN, "crew") + " credit" + plural1(crewN)
+	}
+	return "no credits"
+}
+
+// creditName extracts a display name from one cast/crew entry: the nested
+// person's name for a title's cast/crew ({"person":{"name":...}}, from
+// `movie|show|season|episode people`), or the nested movie/show's
+// "Title (Year)" for a person's filmography ({"movie":{...}}/{"show":{...}},
+// from `person movies|shows`). Returns "" on any other shape.
+func creditName(raw json.RawMessage) string {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return ""
+	}
+	if p, ok := m["person"]; ok {
+		var pm map[string]json.RawMessage
+		if err := json.Unmarshal(p, &pm); err != nil {
+			return ""
+		}
+		return str(pm["name"])
+	}
+	if mv, ok := m["movie"]; ok {
+		return titleOf(mv)
+	}
+	if sh, ok := m["show"]; ok {
+		return titleOf(sh)
+	}
+	return ""
+}
+
+// creditNames collects up to limit non-empty display names from a cast/crew
+// array, in order, skipping entries that yield no name rather than padding
+// the list with blanks.
+func creditNames(raw json.RawMessage, limit int) []string {
+	var arr []json.RawMessage
+	if err := json.Unmarshal(raw, &arr); err != nil {
+		return nil
+	}
+	var names []string
+	for _, item := range arr {
+		if len(names) >= limit {
+			break
+		}
+		if n := creditName(item); n != "" {
+			names = append(names, n)
+		}
+	}
+	return names
+}
+
+// plural renders "N label" (e.g. "1 cast", "3 crew").
+func plural(n int, label string) string {
+	return strconv.Itoa(n) + " " + label
+}
+
+// plural1 returns "" for n==1, "s" otherwise, for a trailing noun.
+func plural1(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// arrLen returns the length of a JSON array field, or 0 if absent/not an array.
+func arrLen(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var arr []json.RawMessage
+	if err := json.Unmarshal(raw, &arr); err != nil {
+		return 0
+	}
+	return len(arr)
 }
 
 // appendWatching adds a " · N watching" suffix when the body carries a watcher

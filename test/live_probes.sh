@@ -29,3 +29,8 @@ done
 
 echo "## NOT fired live (would mutate account): PUT /sync/{watchlist,favorites} settings, reorder, update-item"
 echo "   -> covered in Phase 4 with throwaway-list data."
+
+echo "## person (B1, read-only, no auth required)"
+for ep in people/bryan-cranston people/bryan-cranston/movies people/bryan-cranston/shows people/bryan-cranston/lists; do
+  printf "GET /%-28s %s\n" "$ep" "$(code "${H[@]}" https://api.trakt.tv/$ep)"
+done

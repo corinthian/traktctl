@@ -18,3 +18,20 @@ Must fix before 1.4.0 ships. Options, not yet decided:
 - Fetch kinds concurrently within the limit, so the wall time drops while the request count stays the same.
 
 Whichever lands, the skill's export paragraph needs to say what to expect after an export.
+
+## 1.4.0-testing soak checklist
+
+Deployed 2026-09-11. Run these through `/traktctl` over the week, not by hand, so the skill is tested with the binary. Rollback at any point: `cp ~/.local/bin/traktctl.1.3.0.bak ~/.local/bin/traktctl` and `cp ~/.claude/skills/traktctl/SKILL.md.1.3.0.bak ~/.claude/skills/traktctl/SKILL.md`.
+
+1. `traktctl --version` reports 1.4.0-testing.
+2. Ask "who is in Breaking Bad". Expect a cast table with characters, no ID shown.
+3. Ask "what else has Bryan Cranston been in". Expect a person search, then a filmography table with a Character/Job column.
+4. Ask "what's trending on Trakt lists". Expect list names with item counts.
+5. Pick one of those lists and ask for its items. Expect the skill to chain the list id without asking you for it.
+6. Ask for a Trakt backup to a folder. Expect 17 JSON files, a file list back, no raw data printed.
+7. Immediately after step 6, run any other Trakt query. Expect a rate-limit message with a retry time, not a bare failure. This is the known issue; note how the skill words it.
+8. Ask for your stats. Expect the skill to not offer a genre breakdown, or to warn about cost if it does.
+9. One mutation you'd do anyway (add to watchlist). Expect the 1.3.0 contract to behave as before.
+10. Anything that surprised you goes in `~/.claude/skills/traktctl/LESSONS.md` via the skill's own reflection rule.
+
+Pass = all ten behave as expected by 2026-09-18. Then merge `testing` to main, release 1.4.0, after the rate-limit fix.

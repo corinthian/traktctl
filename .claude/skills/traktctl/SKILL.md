@@ -175,7 +175,7 @@ Exit-code fallback when no code is parseable: 1 → bad request on my end, 2 →
 
 ---
 
-## Command Surface (v1 — 11 groups)
+## Command Surface (v1 — 12 groups)
 
 Group/verb names are stable; pull exact flags from `traktctl <group> <verb> --llm`. Pattern: `traktctl <group> <verb> [--flags]`.
 
@@ -210,11 +210,14 @@ Same shape (show adds episode-aware verbs). Discovery lists: `trending`, `popula
 ### user — profile + social
 ~44 verbs. Reads: `profile`, `settings`, `stats`, `watchlist`, `watched`, `history`, `ratings`, `collection`, `favorites`, `comments`, `notes`, `likes`, `lists`, `watching`, `hidden`, `saved-filters`. List management (all gated — see [Confirmation Gates](#confirmation-gates)): `list`, `list-items`, `list-create`, `list-delete`, `list-update`, `list-items-add`, `list-items-remove`, `list-items-reorder`, `list-item-update`, `lists-reorder`, `list-like`/`list-unlike`, `list-comments`, `list-report`. Social (mutations gated): `follow`, `followers`, `following`, `friends`, `block`, `blocked`, `collaborations`, `requests-*`, `report`. `--user` defaults to the configured user, then `me`. "My stats" → `user stats`; summarize counts and totals (plays, watched, minutes, collected, ratings distribution) — don't dump the object. `user stats` returns **no genre breakdown**, and there's no v1 command for "favorite genres" (it would mean joining per-title genres across full history) — say it's not supported rather than attempting a tally.
 
+### list — public/curated lists (read-only)
+`trending`, `popular` (no id); `get`, `items` (optional `--type movie|show|season|episode|person`), `likes` (all three need `--list-id`). This is Trakt's public/curated list surface, distinct from `user lists` (a specific user's own personal lists) — "what's trending on Trakt" or "show me list #<id>" → `list`; "my lists" / "<user>'s lists" → `user lists`. Read-only: no like/unlike here yet.
+
 ---
 
 ## Not Built Yet (v2)
 
-If the user asks for one of these, say it's not in traktctl yet (don't construct a command that will fail): `checkin`, `cert`, `comment`, `list` (curated/public lists — distinct from `user lists`), `media`, `note`, `person`, `scrobble`, the `country`/`genre`/`language`/`network` lookups, and `bulk export`. E.g. "Trakt has the data but traktctl doesn't expose people/cast lookup yet — it's a planned v2 group."
+If the user asks for one of these, say it's not in traktctl yet (don't construct a command that will fail): `checkin`, `cert`, `comment`, `media`, `note`, `person`, `scrobble`, the `country`/`genre`/`language`/`network` lookups, and `bulk export`. E.g. "Trakt has the data but traktctl doesn't expose people/cast lookup yet — it's a planned v2 group."
 
 ---
 

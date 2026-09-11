@@ -2,9 +2,11 @@
 name: traktctl
 description: >
   Trakt.tv control via the traktctl CLI. TRIGGER when: user wants to search
-  movies/shows, look up a title's details, check or manage their watchlist /
-  favorites / history / ratings, see recommendations, check the release
-  calendar, view profile stats, or says "/traktctl". Parses natural-language
+  movies/shows, look up a title's details or cast, ask what else an actor or
+  director has been in, browse public or trending Trakt lists, check or manage
+  their watchlist / favorites / history / ratings, see recommendations, check
+  the release calendar, view profile stats, back up or export their Trakt
+  account, or says "/traktctl". Parses natural-language
   intent into traktctl commands. Hides the JSON envelope and error codes —
   speaks plain English. Trakt is metadata + social + history, not playback.
 argument-hint: "[phrase | command | query]"
@@ -19,7 +21,7 @@ Goal: human-friendly control over every traktctl surface. The user speaks intent
 
 Trakt is the **metadata/social/history** layer. It does NOT play anything. "Play this", "pause", "what's on my TV" → that belongs to whatever plays media, not this skill. Trakt answers "what is this", "what have I watched", "what's on my watchlist", "what's coming out", "what should I watch".
 
-**Requires traktctl ≥ 1.3.0.** The mutation contract this skill relies on — the `--id` guard, `NOT_APPLIED`/exit 6, `meta.partial`, scope-tagged `--llm`, `BAD_REQUEST` for usage errors — is the 1.2.0 contract; the error codes (`DECODE_ERROR`, `TRANSPORT_FAILED`) and the integer-second `--timeout` are 1.3.0. **Before the first mutation of a session, run `traktctl --version`.** Below 1.3.0, say so and stop: older binaries can report a no-op write as `ok: true`, and nothing in the output reveals it. Tell the user to upgrade; do not improvise mutations against an older contract. Reads are unaffected.
+**Requires traktctl ≥ 1.3.0.** The mutation contract this skill relies on — the `--id` guard, `NOT_APPLIED`/exit 6, `meta.partial`, scope-tagged `--llm`, `BAD_REQUEST` for usage errors — is the 1.2.0 contract; the error codes (`DECODE_ERROR`, `TRANSPORT_FAILED`) and the integer-second `--timeout` are 1.3.0. The `person` and `list` groups and `sync export` are 1.4.0. On an older binary they fail as `BAD_REQUEST` with an `unknown command` message — that means "needs an upgrade", not "not built"; say so and stop. **Before the first mutation of a session, run `traktctl --version`.** Below 1.3.0, say so and stop: older binaries can report a no-op write as `ok: true`, and nothing in the output reveals it. Tell the user to upgrade; do not improvise mutations against an older contract. Reads are unaffected.
 
 ---
 
@@ -79,8 +81,8 @@ Every list of titles uses one shape. Add a leading `#` column; keep the `#`→ID
 | 2 | Breaking Bad | show | 2008 | … |
 
 - **Title** — name only. For an episode row, Title is the show; put the locator `S0xE0y — Episode Title` in the Type column.
-- **Type** — `movie` / `show` / `episode` / `person` / `list`.
-- **Context** — the rightmost column, label swaps per command: `Overview` (search/get), `Added` (watchlist), `Watched` (history), `Rating` (ratings), `Airs` (calendar), `Score` (recommendations).
+- **Type** — `movie` / `show` / `episode` / `person` / `list`. A person row's Title is the name and Year is blank; a list row's Title is the list name and Year is blank.
+- **Context** — the rightmost column, label swaps per command: `Overview` (search/get), `Added` (watchlist), `Watched` (history), `Rating` (ratings), `Airs` (calendar), `Score` (recommendations), `Character/Job` (`person movies`/`person shows` and `movie people`/`show people`), `Items` (`list trending`/`list popular`/`list get`, the `item_count`), `Likes` (`list likes`).
 - Debug: append a trakt ID/slug column on the right.
 - Empty result → plain line, e.g. `Your watchlist is empty.` / `Nothing found for "<q>".`
 
@@ -194,6 +196,13 @@ Same shape (show adds episode-aware verbs). Discovery lists: `trending`, `popula
 ### person — detail, filmography, list membership
 `get` (bio/detail), `movies`/`shows` (filmography: cast/crew credit map), `lists` (public lists this person appears on). All take the global `--id`/`--id-type` like `movie get`/`show get` — there's no name-based lookup on `person get` itself, so resolve a name first.
 
+Worked example — "what else has Bryan Cranston been in":
+```
+traktctl search query --type person --q "Bryan Cranston"      # take .data[0].person.ids.slug
+traktctl person movies --id-type slug --id bryan-cranston
+```
+`--llm` on `person get` shows examples without `--id`; the `--id`/`--id-type` pair is inherited and is what the group reads.
+
 **"Who is in X" vs "what else has she been in" is two different groups, not two flags on one.** "Who is in X" (a title's cast) is already built: `movie people` / `show people`. "What else has she been in" (a person's filmography) is `person movies` / `person shows`, resolving the person via `search query --type person` first — never invent a name-search flag on `person get`.
 
 ### season / episode — within a show
@@ -215,7 +224,7 @@ Same shape (show adds episode-aware verbs). Discovery lists: `trending`, `popula
 `export` is the whole-account read: watched, collection, ratings, watchlist, favorites and history, movies and shows and episodes, every page of each — `--all` is implied and the page cap is lifted, so you never pass either. Default is one envelope on stdout keyed by kind (`.data.watched_movies`, `.data.history_episodes`, …); `--dir PATH` writes `<kind>.json` per kind instead and returns only a file list. `--extended full` adds genres and metadata to the watched and collection kinds (nothing else). It is a minute-plus, tens-of-megabytes call on a real account — use it for a backup or a whole-library question, never to answer one about a single title. A kind that fails does not lose the rest: the envelope keeps `errors:[{kind,code,message}]` with `meta.partial: true` and still succeeds, so report which kinds are missing rather than calling the export a failure.
 
 ### user — profile + social
-~44 verbs. Reads: `profile`, `settings`, `stats`, `watchlist`, `watched`, `history`, `ratings`, `collection`, `favorites`, `comments`, `notes`, `likes`, `lists`, `watching`, `hidden`, `saved-filters`. List management (all gated — see [Confirmation Gates](#confirmation-gates)): `list`, `list-items`, `list-create`, `list-delete`, `list-update`, `list-items-add`, `list-items-remove`, `list-items-reorder`, `list-item-update`, `lists-reorder`, `list-like`/`list-unlike`, `list-comments`, `list-report`. Social (mutations gated): `follow`, `followers`, `following`, `friends`, `block`, `blocked`, `collaborations`, `requests-*`, `report`. `--user` defaults to the configured user, then `me`. "My stats" → `user stats`; summarize counts and totals (plays, watched, minutes, collected, ratings distribution) — don't dump the object. `user stats` returns **no genre breakdown**, and there's no v1 command for "favorite genres" (it would mean joining per-title genres across full history) — say it's not supported rather than attempting a tally.
+~44 verbs. Reads: `profile`, `settings`, `stats`, `watchlist`, `watched`, `history`, `ratings`, `collection`, `favorites`, `comments`, `notes`, `likes`, `lists`, `watching`, `hidden`, `saved-filters`. List reads: `list` (one of the user's lists), `list-items`. List mutations (all gated — see [Confirmation Gates](#confirmation-gates)): `list-create`, `list-delete`, `list-update`, `list-items-add`, `list-items-remove`, `list-items-reorder`, `list-item-update`, `lists-reorder`, `list-like`/`list-unlike`, `list-comments`, `list-report`. Social (mutations gated): `follow`, `followers`, `following`, `friends`, `block`, `blocked`, `collaborations`, `requests-*`, `report`. `--user` defaults to the configured user, then `me`. "My stats" → `user stats`; summarize counts and totals (plays, watched, minutes, collected, ratings distribution) — don't dump the object. `user stats` returns **no genre breakdown**, and there's no v1 command for "favorite genres" (it would mean joining per-title genres across full history) — say it's not supported rather than attempting a tally.
 
 ### list — public/curated lists (read-only)
 `trending`, `popular` (no id); `get`, `items` (optional `--type movie|show|season|episode|person`), `likes` (all three need `--list-id`). This is Trakt's public/curated list surface, distinct from `user lists` (a specific user's own personal lists) — "what's trending on Trakt" or "show me list #<id>" → `list`; "my lists" / "<user>'s lists" → `user lists`. Read-only: no like/unlike here yet.

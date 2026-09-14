@@ -24,7 +24,7 @@ import (
 )
 
 // Version is the binary version, stamped into the User-Agent and help.
-var Version = "1.3.0"
+var Version = "1.4.0"
 
 // defaultBaseURL mirrors config's default. Used where a Config is built
 // without going through config.Load (config init, the tolerant build path).

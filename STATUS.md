@@ -32,6 +32,6 @@ Deployed 2026-09-11. Run these through `/traktctl` over the week, not by hand, s
 7. Immediately after step 6, run any other Trakt query. Expect a rate-limit message with a retry time, not a bare failure. This is the known issue; note how the skill words it. << no time out error. Operation continued uninterrupted.
 8. Ask for your stats. Expect the skill to not offer a genre breakdown, or to warn about cost if it does. << worked perfectly. 👍
 9. One mutation you'd do anyway (add to watchlist). Expect the 1.3.0 contract to behave as before. << 👍
-10. Anything that surprised you goes in `~/.claude/skills/traktctl/LESSONS.md` via the skill's own reflection rule.
+10. Anything that surprised you goes in the skill's local lessons log via its own reflection rule.
 
 Pass = all ten behave as expected by 2026-09-18. Then merge `testing` to main, release 1.4.0. The rate-limit issue ships as known.

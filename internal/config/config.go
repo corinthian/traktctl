@@ -44,8 +44,36 @@ type Config struct {
 	AccessToken  string `toml:"-"`
 	RefreshToken string `toml:"-"`
 
+	// TokenStore is where auth keeps tokens: TokenStoreKeychain (keychain
+	// first, tokens.json fallback) or TokenStoreFile (tokens.json only, the
+	// keychain is never touched). $TRAKTCTL_TOKEN_STORE beats the file.
+	TokenStore string `toml:"token_store"`
+
 	// Source records where the config file was loaded from (for `auth status`).
 	Source string `toml:"-"`
+}
+
+// Token store modes.
+const (
+	TokenStoreKeychain = "keychain"
+	TokenStoreFile     = "file"
+)
+
+// ResolveTokenStore applies $TRAKTCTL_TOKEN_STORE over the file value, defaults
+// to keychain, and rejects anything else.
+func ResolveTokenStore(fileValue string) (string, error) {
+	v := fileValue
+	src := "config token_store"
+	if e := os.Getenv("TRAKTCTL_TOKEN_STORE"); e != "" {
+		v, src = e, "$TRAKTCTL_TOKEN_STORE"
+	}
+	switch v {
+	case "":
+		return TokenStoreKeychain, nil
+	case TokenStoreKeychain, TokenStoreFile:
+		return v, nil
+	}
+	return "", fmt.Errorf("%s %q is invalid; token_store must be %q or %q", src, v, TokenStoreKeychain, TokenStoreFile)
 }
 
 // Flags carries the raw CLI flag values that override file/env.
@@ -110,6 +138,11 @@ func Load(f Flags) (*Config, error) {
 	if err := validateBaseURL(c.BaseURL); err != nil {
 		return nil, err
 	}
+	ts, err := ResolveTokenStore(c.TokenStore)
+	if err != nil {
+		return nil, err
+	}
+	c.TokenStore = ts
 	// --timeout is not a Resolve candidate: Resolve skips an empty Value, so
 	// an explicitly empty flag (--timeout "") would read as unset instead of
 	// the error the contract requires. TimeoutSet is what makes that
@@ -275,6 +308,8 @@ type FileConfig struct {
 	// instead of silently discarding it. A legacy string value ("30s") fails
 	// to decode here -- that is ReadFileConfig's job to report, not to migrate.
 	Timeout *int64 `toml:"timeout,omitempty"`
+	// TokenStore is likewise carried forward by `config init --force`.
+	TokenStore string `toml:"token_store,omitempty"`
 }
 
 // ReadFileConfig parses an existing config.toml into the on-disk shape. Used by

@@ -58,13 +58,21 @@ type Manager struct {
 func NewManager(cfg *config.Config) *Manager {
 	return &Manager{
 		cfg:   cfg,
-		store: newStore(),
+		store: newStore(cfg.TokenStore),
 		http: xhttp.NewClient(xhttp.Options{
 			Timeout:   cfg.Timeout,
 			Redirects: xhttp.RedirectPolicy{SameOrigin: true, MaxHops: 10},
 		}),
 		errW: os.Stderr,
 	}
+}
+
+// TokenStore reports the token store mode in use: "keychain" or "file".
+func (m *Manager) TokenStore() string {
+	if m.cfg.TokenStore == config.TokenStoreFile {
+		return config.TokenStoreFile
+	}
+	return config.TokenStoreKeychain
 }
 
 // limit is the response-body bound for every OAuth read.

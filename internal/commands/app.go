@@ -139,7 +139,14 @@ func (a *App) build() *output.CLIError {
 // defaults so the command body still has an Auth and a Client to talk to.
 func (a *App) buildTolerant(cerr *output.CLIError) {
 	a.CfgErr = cerr
-	a.wire(&config.Config{BaseURL: defaultBaseURL, Timeout: 30 * time.Second})
+	// The file is unusable, but $TRAKTCTL_TOKEN_STORE still applies, so a
+	// file-mode user's diagnostics never probe the keychain. An invalid value
+	// falls back to the default here; the normal path reports it.
+	mode, _ := config.ResolveTokenStore("")
+	if mode == "" {
+		mode = config.TokenStoreKeychain
+	}
+	a.wire(&config.Config{BaseURL: defaultBaseURL, Timeout: 30 * time.Second, TokenStore: mode})
 }
 
 // wire is the shared construction step, so the tolerant path cannot drift from

@@ -10,7 +10,7 @@ import (
 
 	"github.com/corinthian/traktctl/internal/atomicfile"
 	"github.com/corinthian/traktctl/internal/config"
-	keyring "github.com/zalando/go-keyring"
+	"github.com/corinthian/traktctl/internal/keychain"
 )
 
 const (
@@ -18,12 +18,13 @@ const (
 	keyringUser    = "tokens"
 )
 
-// store persists a Token. Primary: macOS Keychain via go-keyring. Fallback:
-// a JSON file (used on CI/Linux or when the keychain is unavailable).
+// store persists a Token. Primary: the OS keychain via internal/keychain, whose
+// calls are bounded. Fallback: a JSON file (used on CI/Linux or when the
+// keychain is unavailable). In file mode the keychain is never called.
 //
 // kGet/kSet/kDelete are seams for per-operation keychain failure injection --
 // something keyring.MockInit cannot give, since it fails (or succeeds) every
-// call at once. A nil field falls back to the real keyring function, so a
+// call at once. A nil field falls back to the real keychain function, so a
 // zero-value store{filePath: ...} behaves exactly as it did before.
 type store struct {
 	filePath string // resolved fallback file path
@@ -36,40 +37,56 @@ type store struct {
 	errW io.Writer
 }
 
+// errFileMode makes save take the file path when token_store is "file".
+var errFileMode = errors.New("token_store is file; keychain not used")
+
 // newStore resolves the file-fallback path: ~/.config/traktctl/tokens.json.
-func newStore() *store {
+// mode is config.TokenStoreFile or anything else (keychain).
+func newStore(mode string) *store {
 	path := "tokens.json"
 	if dir, err := config.ConfigDir(); err == nil {
 		path = filepath.Join(dir, "tokens.json")
 	}
-	return &store{
-		filePath: path,
-		kGet:     keyring.Get,
-		kSet:     keyring.Set,
-		kDelete:  keyring.Delete,
-		errW:     os.Stderr,
+	s := &store{filePath: path, errW: os.Stderr}
+	setKeychainFuncs(s, mode, keychain.Get, keychain.Set, keychain.Delete)
+	return s
+}
+
+// setKeychainFuncs wires the keychain seams for mode. File mode installs stubs
+// that never call get/set/del: load sees nothing stored, save falls through to
+// the file, and delete has nothing to remove, so no keychain warning is issued.
+func setKeychainFuncs(s *store, mode string,
+	get func(string, string) (string, error),
+	set func(string, string, string) error,
+	del func(string, string) error) {
+	if mode == config.TokenStoreFile {
+		s.kGet = func(string, string) (string, error) { return "", keychain.ErrNotFound }
+		s.kSet = func(string, string, string) error { return errFileMode }
+		s.kDelete = func(string, string) error { return keychain.ErrNotFound }
+		return
 	}
+	s.kGet, s.kSet, s.kDelete = get, set, del
 }
 
 func (s *store) keyGet() (string, error) {
 	if s.kGet != nil {
 		return s.kGet(keyringService, keyringUser)
 	}
-	return keyring.Get(keyringService, keyringUser)
+	return keychain.Get(keyringService, keyringUser)
 }
 
 func (s *store) keySet(blob string) error {
 	if s.kSet != nil {
 		return s.kSet(keyringService, keyringUser, blob)
 	}
-	return keyring.Set(keyringService, keyringUser, blob)
+	return keychain.Set(keyringService, keyringUser, blob)
 }
 
 func (s *store) keyDelete() error {
 	if s.kDelete != nil {
 		return s.kDelete(keyringService, keyringUser)
 	}
-	return keyring.Delete(keyringService, keyringUser)
+	return keychain.Delete(keyringService, keyringUser)
 }
 
 func (s *store) warn(msg string) { warn(s.errW, msg) }
@@ -91,7 +108,7 @@ func (s *store) load() (*Token, string, error) {
 	var kErr error
 
 	if blob, err := s.keyGet(); err != nil {
-		if !errors.Is(err, keyring.ErrNotFound) {
+		if !errors.Is(err, keychain.ErrNotFound) {
 			kErr = err
 		}
 	} else if t, perr := parseToken([]byte(blob)); perr == nil && t.AccessToken != "" {
@@ -114,7 +131,13 @@ func (s *store) load() (*Token, string, error) {
 		return kTok, "keychain", nil
 	case fTok != nil:
 		if kErr != nil {
-			s.warn("keychain unavailable (" + kErr.Error() + "); falling back to " + s.filePath)
+			// A bound timeout already reads "keychain unavailable: ..."; only
+			// other keychain errors need the prefix.
+			msg := kErr.Error()
+			if !errors.Is(kErr, keychain.ErrUnavailable) {
+				msg = "keychain unavailable (" + msg + ")"
+			}
+			s.warn(msg + "; falling back to " + s.filePath)
 		}
 		return fTok, s.filePath, nil
 	}
@@ -152,7 +175,7 @@ func (s *store) save(t *Token) (string, error) {
 	if err := atomicfile.Write(s.filePath, b); err != nil {
 		return "", err
 	}
-	if derr := s.keyDelete(); derr != nil && !errors.Is(derr, keyring.ErrNotFound) {
+	if derr := s.keyDelete(); derr != nil && !errors.Is(derr, keychain.ErrNotFound) {
 		s.warn("token stored in " + s.filePath + " but the superseded keychain entry" +
 			" could not be removed: " + derr.Error())
 	}
@@ -166,7 +189,7 @@ func (s *store) save(t *Token) (string, error) {
 // readable. Both stores are attempted regardless of the other's outcome.
 func (s *store) clear() error {
 	var errs []error
-	if err := s.keyDelete(); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+	if err := s.keyDelete(); err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		errs = append(errs, fmt.Errorf("keychain: %w", err))
 	}
 	if err := os.Remove(s.filePath); err != nil && !errors.Is(err, os.ErrNotExist) {

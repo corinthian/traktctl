@@ -64,17 +64,18 @@ func (a *App) configInit() *cobra.Command {
 				path = p
 			}
 			// `config init --force` rewrites the file from flags, and `timeout`
-			// is the one field nothing on this command can supply — so without
-			// this it is silently dropped on every re-init. A read failure is
-			// not fatal: --force means overwrite, and the timeout falls back to
-			// the 30s default.
+			// and `token_store` are the fields nothing on this command can
+			// supply — so without this they are silently dropped on every
+			// re-init. A read failure is not fatal: --force means overwrite,
+			// and both fall back to their defaults.
 			if force {
 				switch prev, rerr := config.ReadFileConfig(path); {
 				case rerr == nil:
 					fc.Timeout = prev.Timeout
+					fc.TokenStore = prev.TokenStore
 				case !errors.Is(rerr, os.ErrNotExist):
 					fmt.Fprintln(a.Out.Err, "[traktctl] WARNING: could not read the existing config at "+
-						path+" to carry its timeout forward ("+rerr.Error()+"); it will be dropped.")
+						path+" to carry its timeout and token_store forward ("+rerr.Error()+"); they will be dropped.")
 				}
 			}
 			if err := config.WriteConfigFile(path, fc, force); err != nil {
@@ -98,7 +99,13 @@ func (a *App) configInit() *cobra.Command {
 					return output.UsageError(
 						"--login needs --client-secret for the device flow")
 				}
-				cfg := &config.Config{ClientID: clientID, ClientSecret: fc.ClientSecret, BaseURL: baseURL, Timeout: 30 * time.Second}
+				// The mode the new file will apply, env first, so --login
+				// never probes a keychain the user has opted out of.
+				mode, merr := config.ResolveTokenStore(fc.TokenStore)
+				if merr != nil {
+					return output.NewError(output.CodeBadConfig, "config written, but "+merr.Error(), output.ExitUser)
+				}
+				cfg := &config.Config{ClientID: clientID, ClientSecret: fc.ClientSecret, BaseURL: baseURL, Timeout: 30 * time.Second, TokenStore: mode}
 				mgr := auth.NewManager(cfg)
 				tok, loc, err := mgr.LoginDevice(a.ctx(), a.Out.Err, !noBrowser)
 				if err != nil {
@@ -141,6 +148,7 @@ func (a *App) configPath() *cobra.Command {
 				"config_found":    resolved != "",
 				"config_explicit": explicit,
 				"token_stored_at": tokenLoc,
+				"token_store":     a.Auth.TokenStore(),
 			}
 			// The whole point of the tolerateBadConfig exemption: when the
 			// explicit path is the problem, this command is what tells you so,

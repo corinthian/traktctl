@@ -105,7 +105,7 @@ func newAuthCmd(app *App) *cobra.Command {
 			// unreadable tokens.json) reads identically to "not logged in"
 			// without this: same authenticated:false, same AUTH_REQUIRED on
 			// the next call, and no way to tell the two apart.
-			out := map[string]interface{}{"authenticated": tok != nil}
+			out := map[string]interface{}{"authenticated": tok != nil, "token_store": app.Auth.TokenStore()}
 			if lerr := app.Auth.LoadError(); lerr != nil {
 				out["load_error"] = lerr.Error()
 			}

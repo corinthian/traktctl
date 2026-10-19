@@ -131,7 +131,13 @@ func (s *store) load() (*Token, string, error) {
 		return kTok, "keychain", nil
 	case fTok != nil:
 		if kErr != nil {
-			s.warn("keychain unavailable (" + kErr.Error() + "); falling back to " + s.filePath)
+			// A bound timeout already reads "keychain unavailable: ..."; only
+			// other keychain errors need the prefix.
+			msg := kErr.Error()
+			if !errors.Is(kErr, keychain.ErrUnavailable) {
+				msg = "keychain unavailable (" + msg + ")"
+			}
+			s.warn(msg + "; falling back to " + s.filePath)
 		}
 		return fTok, s.filePath, nil
 	}

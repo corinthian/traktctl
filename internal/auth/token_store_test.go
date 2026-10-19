@@ -85,8 +85,8 @@ func TestLoadFallsBackWhenKeychainTimesOut(t *testing.T) {
 	if tok.AccessToken != "file" || loc != s.filePath {
 		t.Errorf("load = %q from %q, want the file token", tok.AccessToken, loc)
 	}
-	if !strings.Contains(warnings.String(), "keychain unavailable") {
-		t.Errorf("warning = %q, want a keychain unavailable notice", warnings.String())
+	if n := strings.Count(warnings.String(), "keychain unavailable"); n != 1 {
+		t.Errorf("warning = %q, want exactly one keychain unavailable notice, got %d", warnings.String(), n)
 	}
 }
 

@@ -90,6 +90,24 @@ func TestLoadFallsBackWhenKeychainTimesOut(t *testing.T) {
 	}
 }
 
+// TestLoadWrapsOtherKeychainErrors: an error that is not the bound's own
+// ErrUnavailable still gets the "keychain unavailable (...)" wrapper.
+func TestLoadWrapsOtherKeychainErrors(t *testing.T) {
+	var warnings bytes.Buffer
+	s, _ := newFakeStore(t)
+	s.errW = &warnings
+	s.kGet = func(string, string) (string, error) { return "", errors.New("exit status 51") }
+	seedFile(t, s, &Token{AccessToken: "file", CreatedAt: 10})
+
+	if _, _, err := s.load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := "keychain unavailable (exit status 51); falling back to " + s.filePath
+	if !strings.Contains(warnings.String(), want) {
+		t.Errorf("warning = %q, want it to contain %q", warnings.String(), want)
+	}
+}
+
 func TestManagerTokenStore(t *testing.T) {
 	for in, want := range map[string]string{"": "keychain", "keychain": "keychain", "file": "file"} {
 		m := &Manager{cfg: &config.Config{TokenStore: in}}
